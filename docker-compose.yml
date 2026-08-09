@@ -1,0 +1,66 @@
+# Full stack in one command:
+#   docker compose up --build
+#
+# Then seed the demo data once:
+#   docker compose exec api npm run db:seed
+#
+# App:  http://localhost:8080
+# API:  http://localhost:5001
+
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: educonnect
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-educonnect_dev_password}
+      POSTGRES_DB: educonnect
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    ports:
+      - "5433:5432" # 5433 on the host to avoid clashing with a local Postgres
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U educonnect -d educonnect"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  api:
+    build:
+      context: ./backend
+    environment:
+      NODE_ENV: production
+      PORT: 5001
+      DATABASE_URL: postgresql://educonnect:${DB_PASSWORD:-educonnect_dev_password}@db:5432/educonnect?schema=public
+      # Compose-only defaults. Generate real ones before deploying anywhere public:
+      #   node -e "console.log(require('crypto').randomBytes(48).toString('hex'))"
+      JWT_ACCESS_SECRET: ${JWT_ACCESS_SECRET:?set JWT_ACCESS_SECRET in .env}
+      JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET:?set JWT_REFRESH_SECRET in .env}
+      DEFAULT_USER_PASSWORD: ${DEFAULT_USER_PASSWORD:?set DEFAULT_USER_PASSWORD in .env}
+      CORS_ORIGIN: ${CORS_ORIGIN:-http://localhost:8080}
+      APP_URL: ${APP_URL:-http://localhost:8080}
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASS: ${SMTP_PASS:-}
+      SMTP_FROM: ${SMTP_FROM:-EduConnect <no-reply@educonnect.io>}
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - "5001:5001"
+    # Apply migrations on start so a fresh volume comes up ready.
+    command: sh -c "npx prisma migrate deploy && node src/server.js"
+
+  web:
+    build:
+      context: ./frontend
+      args:
+        # Same-origin: nginx proxies /api to the api service.
+        VITE_API_URL: /api
+    depends_on:
+      - api
+    ports:
+      - "8080:80"
+
+volumes:
+  pgdata:
