@@ -1,0 +1,104 @@
+# Render Blueprint — deploys the API and the frontend together.
+#
+# In Render: New → Blueprint → pick this repo. It reads this file and creates
+# both services, so there are no build/start commands to type by hand.
+#
+# Three values must be supplied yourself (marked `sync: false` — Render will
+# prompt for them). Everything else, including the JWT secrets, is generated.
+#
+# The database is NOT defined here: it lives on Neon. Paste its connection
+# string into DATABASE_URL when prompted.
+
+services:
+  # ── API ────────────────────────────────────────────────────────────
+  - type: web
+    name: educonnect-api
+    runtime: node
+    plan: free
+    region: oregon
+    rootDir: backend
+
+    # migrate deploy (not migrate dev) — applies existing migrations without
+    # ever prompting or resetting, which is what you want on a live database.
+    buildCommand: npm ci && npx prisma generate && npx prisma migrate deploy
+    startCommand: npm start
+
+    # /health does a real SELECT 1, so Render stops routing traffic when
+    # Postgres is unreachable instead of serving errors.
+    healthCheckPath: /health
+
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 5001
+
+      # Paste your Neon connection string (include ?sslmode=require).
+      - key: DATABASE_URL
+        sync: false
+
+      # Render generates these — long, random, and different from each other,
+      # which is exactly what the production start-up check demands.
+      - key: JWT_ACCESS_SECRET
+        generateValue: true
+      - key: JWT_REFRESH_SECRET
+        generateValue: true
+      - key: DEFAULT_USER_PASSWORD
+        generateValue: true
+
+      # The API and the static site are different origins on Render, so the
+      # refresh cookie needs SameSite=None; Secure. Without this, logins
+      # appear to succeed and then silently drop on the next request.
+      - key: COOKIE_CROSS_SITE
+        value: true
+
+      # Set both to your frontend's URL once it exists, e.g.
+      #   https://educonnect-web.onrender.com
+      # No trailing slash. CORS_ORIGIN must match the origin exactly.
+      - key: CORS_ORIGIN
+        sync: false
+      - key: APP_URL
+        sync: false
+
+      # Optional — leave unset and emails print to the service logs instead
+      # of being sent. Password reset still works; you just read the link
+      # from the logs rather than an inbox.
+      - key: SMTP_HOST
+        sync: false
+      - key: SMTP_PORT
+        value: 587
+      - key: SMTP_USER
+        sync: false
+      - key: SMTP_PASS
+        sync: false
+
+  # ── Frontend ───────────────────────────────────────────────────────
+  - type: web
+    name: educonnect-web
+    runtime: static
+    rootDir: frontend
+    buildCommand: npm ci && npm run build
+    staticPublishPath: dist
+
+    envVars:
+      # Vite inlines this at BUILD time, so changing it needs a redeploy,
+      # not just a restart. Set it to the API service's URL + /api, e.g.
+      #   https://educonnect-api.onrender.com/api
+      - key: VITE_API_URL
+        sync: false
+
+    routes:
+      # Single-page app: unknown paths are client routes, not 404s.
+      - type: rewrite
+        source: /*
+        destination: /index.html
+
+    headers:
+      - path: /assets/*
+        name: Cache-Control
+        value: public, max-age=31536000, immutable
+      # index.html must never be cached, or a stale shell keeps asking for
+      # asset filenames that no longer exist after a deploy.
+      - path: /index.html
+        name: Cache-Control
+        value: no-cache, no-store, must-revalidate
