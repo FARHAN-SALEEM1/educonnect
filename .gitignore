@@ -32,3 +32,6 @@ coverage/
 # Local scratch
 *.tmp
 _repair.mjs
+
+# Stray browser-preview artefacts
+preview-screenshot.png
