@@ -14,6 +14,7 @@ import {
   predictScore,
 } from "../utils/academics.js";
 import { generateInsightsForStudent } from "../services/insight.service.js";
+import { assertSeatsAvailable, seatsRemaining } from "../utils/subscription.js";
 
 const DAY_LABELS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
@@ -334,11 +335,9 @@ export const createStudent = asyncHandler(async (req, res) => {
   });
   if (!institute) throw ApiError.notFound("Institute not found");
 
-  if (institute._count.students >= institute.plan.maxStudents) {
-    throw ApiError.badRequest(
-      `Student limit reached. The ${institute.plan.name} plan allows ${institute.plan.maxStudents} students — upgrade the plan to add more.`
-    );
-  }
+  // Enforced against the institute's effective cap, not the plan's raw
+  // maximum — a school may sit below its plan's ceiling on purpose.
+  assertSeatsAvailable(institute, institute._count.students, 1);
 
   if (data.parentId) {
     const parent = await prisma.parent.findFirst({
@@ -387,12 +386,8 @@ export const importStudents = asyncHandler(async (req, res) => {
   });
   if (!institute) throw ApiError.notFound("Institute not found");
 
-  const seats = institute.plan.maxStudents - institute._count.students;
-  if (rows.length > seats) {
-    throw ApiError.badRequest(
-      `This import has ${rows.length} students but only ${seats} seat(s) remain on the ${institute.plan.name} plan. Upgrade the plan or import fewer.`
-    );
-  }
+  assertSeatsAvailable(institute, institute._count.students, rows.length);
+  const seats = seatsRemaining(institute, institute._count.students);
 
   // Existing roll numbers, so duplicates are reported rather than thrown by
   // the database one row at a time.

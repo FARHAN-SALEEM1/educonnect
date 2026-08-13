@@ -10,6 +10,11 @@ import {
   periodLabel,
 } from "../utils/academics.js";
 import { DEFAULT_TIMEZONE, daysBefore, isoDayOfWeek, todayIn } from "../utils/dates.js";
+import {
+  effectiveStudentLimit,
+  seatsRemaining,
+  subscriptionSummary,
+} from "../utils/subscription.js";
 
 /**
  * "Today" for a school is a calendar date in *its* timezone, not the server's.
@@ -154,6 +159,15 @@ export const adminDashboard = asyncHandler(async (req, res) => {
 
   if (!institute) throw ApiError.notFound("Institute not found");
 
+  // How many students actually owe something — used by the fee alert tile,
+  // which previously showed a hardcoded "7 students".
+  const unpaidStudents = (
+    await prisma.feeInvoice.groupBy({
+      by: ["studentId"],
+      where: { instituteId, status: { in: ["PENDING", "OVERDUE"] } },
+    })
+  ).length;
+
   // Fee figures
   const fees = { collected: 0, pending: 0, overdue: 0 };
   for (const row of feeRows) {
@@ -233,8 +247,9 @@ export const adminDashboard = asyncHandler(async (req, res) => {
       status: institute.status,
       plan: institute.plan,
       seatsUsed: students,
-      seatsLimit: institute.plan.maxStudents,
-      seatsRemaining: Math.max(0, institute.plan.maxStudents - students),
+      seatsLimit: effectiveStudentLimit(institute),
+      seatsRemaining: seatsRemaining(institute, students),
+      subscription: subscriptionSummary(institute, students),
     },
     kpis: {
       students,
@@ -243,14 +258,21 @@ export const adminDashboard = asyncHandler(async (req, res) => {
       todayPresent: todayAttendance.filter((a) => a.status === "PRESENT").length,
       todayAbsent: todayAttendance.filter((a) => a.status === "ABSENT").length,
       todayLate: todayAttendance.filter((a) => a.status === "LATE").length,
+      todayLeave: todayAttendance.filter((a) => a.status === "LEAVE").length,
+      todayMarkedCount: todayAttendance.length,
       attendanceMarkedToday: todayAttendance.length > 0,
-      attendanceRateToday: attendanceSummary(todayAttendance).rate,
-      attendanceRate30Days: attendanceSummary(monthAttendance).rate,
+      // Null, not 0, when no register exists — the UI must distinguish
+      // "nobody came in" from "nobody has taken the register yet".
+      attendanceRateToday: todayAttendance.length ? attendanceSummary(todayAttendance).rate : null,
+      attendanceRate30Days: monthAttendance.length ? attendanceSummary(monthAttendance).rate : null,
     },
     fees: {
       ...fees,
       outstanding: fees.pending + fees.overdue,
-      collectionRate: collectible ? Number(((fees.collected / collectible) * 100).toFixed(1)) : 0,
+      unpaidStudents,
+      // Null when nothing has ever been invoiced — a new school has no
+      // collection rate, and showing 0% would read as a failure to collect.
+      collectionRate: collectible ? Number(((fees.collected / collectible) * 100).toFixed(1)) : null,
     },
     gradeBreakdown,
     topPerformers: ranked.slice(0, 5),

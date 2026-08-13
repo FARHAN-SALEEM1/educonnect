@@ -23,6 +23,13 @@ export const signupSchema = z.object({
   email: emailField,
   address: z.string().trim().max(240).optional(),
   approxStudents: z.coerce.number().int().min(0).max(100000).optional(),
+  /** The seat cap the school wants. Clamped to the plan's maximum server-side. */
+  studentLimit: z.coerce
+    .number({ invalid_type_error: "Student limit must be a number" })
+    .int("Student limit must be a whole number")
+    .positive("Student limit must be at least 1")
+    .max(100000, "Student limit is unrealistically high")
+    .optional(),
   planId: z.enum(["starter", "growth", "elite"]).default("starter"),
 
   adminName: z.string().trim().min(2, "Admin name is required").max(120),

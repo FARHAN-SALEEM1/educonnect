@@ -106,9 +106,16 @@ export const login = asyncHandler(async (req, res) => {
   }
   if (!user.isActive) throw ApiError.forbidden("Your account has been deactivated");
 
-  if (user.institute && ["SUSPENDED", "CANCELLED"].includes(user.institute.status)) {
+  // Same wording as the per-request check in middleware/auth.js, so a user
+  // sees one consistent explanation whether they are logging in or already in.
+  if (user.institute?.status === "SUSPENDED") {
     throw ApiError.forbidden(
-      `${user.institute.name} is currently ${user.institute.status.toLowerCase()}. Contact the platform administrator.`
+      "Your institute account has been suspended. Please contact the administrator."
+    );
+  }
+  if (user.institute?.status === "CANCELLED") {
+    throw ApiError.forbidden(
+      "Your institute account has been closed. Please contact the administrator."
     );
   }
 
@@ -127,7 +134,7 @@ export const login = asyncHandler(async (req, res) => {
  */
 export const signup = asyncHandler(async (req, res) => {
   const {
-    name, city, phone, email, address, approxStudents, planId,
+    name, city, phone, email, address, approxStudents, studentLimit, planId,
     adminName, adminEmail, adminPhone, adminPassword,
   } = req.body;
 
@@ -156,6 +163,11 @@ export const signup = asyncHandler(async (req, res) => {
         phone,
         address: address ?? null,
         approxStudents: approxStudents ?? null,
+        // The number the school asked for becomes its actual seat cap, never
+        // above what the chosen plan allows. Previously this was collected and
+        // then ignored, so every school silently inherited the plan maximum.
+        studentLimit:
+          studentLimit != null ? Math.min(studentLimit, plan.maxStudents) : null,
         planId,
         logo: "🏫",
         // New signups start PENDING; a super admin activates them.

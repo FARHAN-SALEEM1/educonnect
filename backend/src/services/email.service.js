@@ -93,6 +93,35 @@ export const sendWelcome = ({ to, name, role, instituteName, tempPassword, login
     ),
   });
 
+export const sendFeeReminder = ({ to, name, instituteName, total, items }) => {
+  const lines = items
+    .map((i) => `${i.student} — ${i.title}: Rs. ${i.amount.toLocaleString()} (${i.status.toLowerCase()})`)
+    .join("\n");
+
+  return send({
+    to,
+    subject: `Fee reminder from ${instituteName} — Rs. ${total.toLocaleString()} outstanding`,
+    text:
+      `Dear ${name},\n\nOutstanding fees at ${instituteName}:\n\n${lines}\n\n` +
+      `Total due: Rs. ${total.toLocaleString()}\n\nIf you have already paid, please ignore this message.`,
+    html: shell(
+      `Outstanding fees at ${instituteName}`,
+      `<p style="font-size:14px;color:#334155;line-height:1.7">Dear ${name}, our records show the following unpaid fees:</p>
+       <table style="font-size:14px;color:#334155;margin:16px 0;border-collapse:collapse;width:100%">
+         ${items
+           .map(
+             (i) =>
+               `<tr><td style="padding:6px 0;border-bottom:1px solid #E2E8F0">${i.student} — ${i.title}</td>
+                <td style="padding:6px 0;border-bottom:1px solid #E2E8F0;text-align:right"><b>Rs. ${i.amount.toLocaleString()}</b></td></tr>`
+           )
+           .join("")}
+         <tr><td style="padding:10px 0"><b>Total due</b></td><td style="padding:10px 0;text-align:right"><b>Rs. ${total.toLocaleString()}</b></td></tr>
+       </table>
+       <p style="font-size:13px;color:#64748B">If you have already paid, please ignore this message.</p>`
+    ),
+  });
+};
+
 export const sendPasswordChanged = ({ to, name }) =>
   send({
     to,

@@ -26,6 +26,31 @@ export const changePlanSchema = z.object({
   planId: z.enum(["starter", "growth", "elite"]),
 });
 
+/** Admin self-service plan change. planId is validated against the DB too. */
+export const changeMyPlanSchema = z.object({
+  planId: z.string().min(1, "Choose a plan"),
+  studentLimit: z.coerce
+    .number({ invalid_type_error: "Student limit must be a number" })
+    .int("Student limit must be a whole number")
+    .positive("Student limit must be at least 1")
+    .optional()
+    .nullable(),
+});
+
+export const changeStudentLimitSchema = z.object({
+  // null clears the override and falls back to the plan's maximum.
+  studentLimit: z.coerce
+    .number({ invalid_type_error: "Student limit must be a number" })
+    .int("Student limit must be a whole number")
+    .positive("Student limit must be at least 1")
+    .max(100000, "Student limit is unrealistically high")
+    .nullable(),
+});
+
+export const cancelSubscriptionSchema = z.object({
+  reason: z.string().trim().max(500).optional(),
+});
+
 export const changeStatusSchema = z.object({
   status: z.enum(["PENDING", "ACTIVE", "SUSPENDED", "CANCELLED"]),
 });

@@ -131,7 +131,19 @@ model Institute {
   status            InstituteStatus @default(PENDING)
   planId            String
   defaultMonthlyFee Int             @default(0) // PKR, used when generating student invoices
-  approxStudents    Int?            // self-reported at signup
+  approxStudents    Int?            // self-reported at signup, informational only
+
+  /// The seat cap this institute actually operates under.
+  /// null = inherit the plan's maxStudents. Set when a school asks for a
+  /// smaller cap than its plan allows; can never exceed the plan's limit.
+  /// Always read through effectiveStudentLimit() — never plan.maxStudents.
+  studentLimit      Int?
+
+  /// Subscription lifecycle. Cancelling is end-of-period, not immediate:
+  /// the school keeps working until subscriptionEndsAt, and no data is
+  /// removed. Clearing both fields resumes the subscription.
+  cancelAtPeriodEnd Boolean         @default(false)
+  subscriptionEndsAt DateTime?
   joinedAt          DateTime        @default(now())
   trialEndsAt       DateTime?
   /// Soft delete. Set instead of removing the row, so a mistaken deletion is

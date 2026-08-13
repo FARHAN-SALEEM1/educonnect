@@ -3,15 +3,56 @@ import * as ctrl from "../controllers/institute.controller.js";
 import { authenticate, authorize } from "../middleware/auth.js";
 import { validate } from "../middleware/validate.js";
 import {
+  cancelSubscriptionSchema,
+  changeMyPlanSchema,
   changePlanSchema,
   changeStatusSchema,
+  changeStudentLimitSchema,
   createInstituteSchema,
   updateInstituteSchema,
 } from "../validators/institute.schema.js";
+import { requireInstitute } from "../middleware/auth.js";
 
 const router = Router();
 
 router.use(authenticate);
+
+// ── Admin self-service subscription ──────────────────────────────────
+// Declared before "/:id" so "me" is never read as an institute id.
+// requireInstitute pins every one of these to the caller's own institute,
+// so an admin can only ever change their own subscription.
+router.get("/me/subscription", authorize("ADMIN", "SUPERADMIN"), requireInstitute, ctrl.mySubscription);
+
+router.post(
+  "/me/subscription/plan",
+  authorize("ADMIN", "SUPERADMIN"),
+  validate(changeMyPlanSchema),
+  requireInstitute,
+  ctrl.changeMyPlan
+);
+
+router.patch(
+  "/me/subscription/limit",
+  authorize("ADMIN", "SUPERADMIN"),
+  validate(changeStudentLimitSchema),
+  requireInstitute,
+  ctrl.changeMyStudentLimit
+);
+
+router.post(
+  "/me/subscription/cancel",
+  authorize("ADMIN", "SUPERADMIN"),
+  validate(cancelSubscriptionSchema),
+  requireInstitute,
+  ctrl.cancelMySubscription
+);
+
+router.post(
+  "/me/subscription/resume",
+  authorize("ADMIN", "SUPERADMIN"),
+  requireInstitute,
+  ctrl.resumeMySubscription
+);
 
 router.get("/", authorize("SUPERADMIN"), ctrl.listInstitutes);
 router.post("/", authorize("SUPERADMIN"), validate(createInstituteSchema), ctrl.createInstitute);

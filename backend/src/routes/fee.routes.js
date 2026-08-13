@@ -31,6 +31,13 @@ router.post(
   ctrl.markOverdue
 );
 
+router.post(
+  "/remind",
+  authorize("SUPERADMIN", "ADMIN"),
+  requireInstitute,
+  ctrl.sendFeeReminders
+);
+
 router.get("/", validate(feeQuery, "query"), scopeToInstitute, ctrl.listInvoices);
 router.get("/:id", scopeToInstitute, ctrl.getInvoice);
 

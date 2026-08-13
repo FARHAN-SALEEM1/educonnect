@@ -47,6 +47,16 @@ export const institutes = {
   create: (payload) => http.post("/institutes", payload),
   update: (id, payload) => http.patch(`/institutes/${id}`, payload),
   changePlan: (id, planId) => http.patch(`/institutes/${id}/plan`, { planId }),
+
+  // Admin self-service — always scoped to the caller's own institute.
+  mySubscription: () => http.get("/institutes/me/subscription"),
+  changeMyPlan: (planId, studentLimit) =>
+    http.post("/institutes/me/subscription/plan", { planId, ...(studentLimit != null && { studentLimit }) }),
+  changeMyStudentLimit: (studentLimit) =>
+    http.patch("/institutes/me/subscription/limit", { studentLimit }),
+  cancelMySubscription: (reason) =>
+    http.post("/institutes/me/subscription/cancel", { ...(reason && { reason }) }),
+  resumeMySubscription: () => http.post("/institutes/me/subscription/resume", {}),
   changeStatus: (id, status) => http.patch(`/institutes/${id}/status`, { status }),
   remove: (id) => http.delete(`/institutes/${id}`),
 };
@@ -130,6 +140,7 @@ export const fees = {
   update: (id, payload) => http.patch(`/fees/${id}`, payload),
   remove: (id) => http.delete(`/fees/${id}`),
   markOverdue: (lateFee) => http.post("/fees/mark-overdue", { lateFee }),
+  remind: (payload) => http.post("/fees/remind", payload ?? {}),
 };
 
 export const timetable = {

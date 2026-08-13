@@ -48,9 +48,17 @@ export const authenticate = asyncHandler(async (req, _res, next) => {
       select: { status: true, name: true },
     });
     if (!institute) throw ApiError.forbidden("Your institute no longer exists");
-    if (institute.status === "SUSPENDED" || institute.status === "CANCELLED") {
+
+    // Checked on EVERY request, not just at login, so suspending an institute
+    // cuts off sessions that are already authenticated.
+    if (institute.status === "SUSPENDED") {
       throw ApiError.forbidden(
-        `Access blocked — ${institute.name} is currently ${institute.status.toLowerCase()}`
+        "Your institute account has been suspended. Please contact the administrator."
+      );
+    }
+    if (institute.status === "CANCELLED") {
+      throw ApiError.forbidden(
+        "Your institute account has been closed. Please contact the administrator."
       );
     }
   }

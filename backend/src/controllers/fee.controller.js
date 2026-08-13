@@ -5,6 +5,7 @@ import { created, ok, paginate, pageMeta } from "../utils/response.js";
 import { audit } from "../utils/audit.js";
 import { periodLabel } from "../utils/academics.js";
 import { studentScopeWhere } from "../utils/access.js";
+import { sendFeeReminder } from "../services/email.service.js";
 
 const netAmount = (invoice) => invoice.amount - invoice.discount + invoice.lateFee;
 
@@ -247,6 +248,117 @@ export const markOverdue = asyncHandler(async (req, res) => {
   });
 
   return ok(res, { updated: result.count }, `${result.count} invoice(s) marked overdue`);
+});
+
+/**
+ * POST /api/fees/remind
+ *
+ * Sends a fee reminder to the guardian of every student with an unpaid
+ * invoice, using the existing Message model and email service — no second
+ * notification system. Parents without a login still get the email; the
+ * in-app message is only created where a User exists to receive it.
+ */
+export const sendFeeReminders = asyncHandler(async (req, res) => {
+  const { period, includeOverdueOnly = false } = req.body ?? {};
+
+  const invoices = await prisma.feeInvoice.findMany({
+    where: {
+      instituteId: req.instituteId,
+      status: includeOverdueOnly ? "OVERDUE" : { in: ["PENDING", "OVERDUE"] },
+      ...(period && { period }),
+    },
+    include: {
+      student: {
+        include: { parent: { include: { user: { select: { id: true, isActive: true } } } } },
+      },
+      institute: { select: { name: true } },
+    },
+  });
+
+  if (!invoices.length) {
+    return ok(res, { sent: 0, skipped: [], recipients: [] }, "Nothing to remind about — no unpaid invoices.");
+  }
+
+  // One message per guardian, not per invoice, so a parent with three
+  // children gets a single reminder listing all of them.
+  const byParent = new Map();
+  const skipped = [];
+
+  for (const inv of invoices) {
+    const parent = inv.student.parent;
+    if (!parent) {
+      skipped.push({ student: inv.student.name, reason: "no guardian linked" });
+      continue;
+    }
+    if (!byParent.has(parent.id)) byParent.set(parent.id, { parent, items: [] });
+    byParent.get(parent.id).items.push(inv);
+  }
+
+  const instituteName = invoices[0].institute.name;
+  const recipients = [];
+
+  for (const { parent, items } of byParent.values()) {
+    const total = items.reduce((sum, i) => sum + (i.amount - i.discount + i.lateFee), 0);
+    const lines = items
+      .map((i) => `• ${i.student.name} — ${i.title}: Rs. ${(i.amount - i.discount + i.lateFee).toLocaleString()} (${i.status.toLowerCase()})`)
+      .join("\n");
+
+    const subject = `Fee reminder — Rs. ${total.toLocaleString()} outstanding`;
+    const body =
+      `Dear ${parent.name},\n\nOur records show the following outstanding fees at ${instituteName}:\n\n${lines}\n\n` +
+      `Total due: Rs. ${total.toLocaleString()}\n\nPlease clear the balance at your earliest convenience. ` +
+      `If you have already paid, kindly ignore this message.`;
+
+    // In-app message only where the guardian actually has an account.
+    if (parent.user?.id && parent.user.isActive) {
+      await prisma.message.create({
+        data: {
+          instituteId: req.instituteId,
+          senderId: req.user.id,
+          recipientId: parent.user.id,
+          subject,
+          body,
+          studentId: items[0].studentId,
+        },
+      });
+    }
+
+    // Never let a mail failure abort the run — the service already swallows.
+    const delivery = await sendFeeReminder({
+      to: parent.email,
+      name: parent.name,
+      instituteName,
+      total,
+      items: items.map((i) => ({
+        student: i.student.name,
+        title: i.title,
+        amount: i.amount - i.discount + i.lateFee,
+        status: i.status,
+      })),
+    });
+
+    recipients.push({
+      parent: parent.name,
+      email: parent.email,
+      students: items.length,
+      total,
+      messaged: Boolean(parent.user?.id && parent.user.isActive),
+      emailed: delivery.delivered,
+    });
+  }
+
+  audit(req, {
+    action: "fee.remind",
+    entity: "FeeInvoice",
+    meta: { reminders: recipients.length, invoices: invoices.length, skipped: skipped.length },
+  });
+
+  return ok(
+    res,
+    { sent: recipients.length, invoices: invoices.length, recipients, skipped },
+    `Reminder sent to ${recipients.length} guardian(s) covering ${invoices.length} unpaid invoice(s)` +
+      (skipped.length ? `. ${skipped.length} student(s) skipped — no guardian linked.` : ".")
+  );
 });
 
 /** GET /api/fees/stats — collection figures for the admin dashboard. */

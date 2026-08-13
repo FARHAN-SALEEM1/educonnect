@@ -393,12 +393,36 @@ const Signup=({onBack,onLogin})=>{
   const[submitting,setSubmitting]=useState(false);
   const[err,setErr]=useState("");
 
+  /**
+   * Client-side checks mirror the Zod rules on the server. The server is still
+   * the authority — this only gives faster, field-level feedback.
+   */
+  const emailOk=v=>/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(String(v||"").trim());
+  // Pakistani formats plus international: digits, spaces, dashes, optional +.
+  const phoneOk=v=>{
+    const digits=String(v||"").replace(/[^\d]/g,"");
+    return /^[+]?[\d\s()-]{7,20}$/.test(String(v||"").trim())&&digits.length>=7&&digits.length<=15;
+  };
+  const positiveIntOk=v=>/^\d+$/.test(String(v||"").trim())&&Number(v)>0;
+
+  const studentsErr=f.students&&!positiveIntOk(f.students)
+    ? "Student limit must be a whole number greater than 0."
+    : "";
+  const emailErr=f.email&&!emailOk(f.email)?"Enter a valid email address.":"";
+  const phoneErr=f.phone&&!phoneOk(f.phone)?"Enter a valid phone number (7–15 digits).":"";
+  const adminEmailErr=f.adminEmail&&!emailOk(f.adminEmail)?"Enter a valid email address.":"";
+  const adminPhoneErr=f.adminPhone&&!phoneOk(f.adminPhone)?"Enter a valid phone number.":"";
+  const passErr=f.adminPass&&f.adminPass.length<8?"Password must be at least 8 characters.":"";
+
+  const step1Ok=f.name.trim()&&f.city.trim()&&emailOk(f.email)&&!studentsErr&&!phoneErr;
+  const step3Ok=f.adminName.trim()&&emailOk(f.adminEmail)&&f.adminPass.length>=8&&!adminPhoneErr;
+
   const register=async()=>{
     setSubmitting(true);setErr("");
     try{
       await api.auth.signup({
         name:f.name, city:f.city, phone:f.phone, email:f.email,
-        ...(f.students&&{approxStudents:Number(f.students)}),
+        ...(f.students&&{approxStudents:Number(f.students),studentLimit:Number(f.students)}),
         planId:plan,
         adminName:f.adminName, adminEmail:f.adminEmail,
         ...(f.adminPhone&&{adminPhone:f.adminPhone}),
@@ -458,10 +482,19 @@ const Signup=({onBack,onLogin})=>{
                 <Inp label="School / Institute Name*" value={f.name} onChange={e=>set("name",e.target.value)} placeholder="e.g. Beaconhouse School" style={{gridColumn:"1/-1"}}/>
                 <Inp label="City*" value={f.city} onChange={e=>set("city",e.target.value)} placeholder="e.g. Lahore"/>
                 <Inp label="Contact Phone*" value={f.phone} onChange={e=>set("phone",e.target.value)} placeholder="042-000-000"/>
+                {phoneErr&&<div style={{gridColumn:"1/-1",fontSize:11.5,color:T.danger,marginTop:-8,marginBottom:10}}>{phoneErr}</div>}
                 <Inp label="Official Email*" value={f.email} onChange={e=>set("email",e.target.value)} placeholder="info@school.edu" type="email" style={{gridColumn:"1/-1"}}/>
-                <Inp label="Approx. No. of Students" value={f.students} onChange={e=>set("students",e.target.value)} placeholder="e.g. 500" type="number" style={{gridColumn:"1/-1"}}/>
+                {emailErr&&<div style={{gridColumn:"1/-1",fontSize:11.5,color:T.danger,marginTop:-8,marginBottom:10}}>{emailErr}</div>}
+                {/* This is the school's actual seat cap, not a guess — it is
+                    persisted and enforced by the backend, clamped to whatever
+                    the chosen plan allows. */}
+                <Inp label="Student Limit*" value={f.students} onChange={e=>set("students",e.target.value)} placeholder="e.g. 150" type="number" min="1" style={{gridColumn:"1/-1"}}/>
+                <div style={{gridColumn:"1/-1",fontSize:11.5,color:T.muted,marginTop:-8,marginBottom:12,lineHeight:1.6}}>
+                  How many students you plan to enrol. This becomes your limit and can be raised later, up to your plan's maximum.
+                </div>
               </div>
-              <Btn onClick={()=>f.name&&f.city&&f.email?setStep(2):null} full style={{padding:"12px",fontSize:14,borderRadius:11,marginTop:4}} disabled={!f.name||!f.city||!f.email}>Next: Choose Your Plan →</Btn>
+              {studentsErr&&<div style={{background:`${T.danger}12`,color:T.danger,borderRadius:10,padding:"9px 13px",fontSize:12.5,marginBottom:12,border:`1px solid ${T.danger}30`}}>{studentsErr}</div>}
+              <Btn onClick={()=>step1Ok&&setStep(2)} full style={{padding:"12px",fontSize:14,borderRadius:11,marginTop:4}} disabled={!step1Ok}>Next: Choose Your Plan →</Btn>
             </>
           ):step===2?(
             <>
@@ -505,7 +538,10 @@ const Signup=({onBack,onLogin})=>{
                 <Inp label="Admin Full Name*" value={f.adminName} onChange={e=>set("adminName",e.target.value)} placeholder="Dr. Imran Sheikh" style={{gridColumn:"1/-1"}}/>
                 <Inp label="Admin Email*" value={f.adminEmail} onChange={e=>set("adminEmail",e.target.value)} placeholder="admin@school.edu" type="email"/>
                 <Inp label="Admin Phone" value={f.adminPhone} onChange={e=>set("adminPhone",e.target.value)} placeholder="0300-0000000"/>
+                {adminEmailErr&&<div style={{gridColumn:"1/-1",fontSize:11.5,color:T.danger,marginTop:-8,marginBottom:10}}>{adminEmailErr}</div>}
+                {adminPhoneErr&&<div style={{gridColumn:"1/-1",fontSize:11.5,color:T.danger,marginTop:-8,marginBottom:10}}>{adminPhoneErr}</div>}
                 <Inp label="Password*" value={f.adminPass} onChange={e=>set("adminPass",e.target.value)} placeholder="Min 8 characters" type="password" style={{gridColumn:"1/-1"}}/>
+                {passErr&&<div style={{gridColumn:"1/-1",fontSize:11.5,color:T.danger,marginTop:-8,marginBottom:10}}>{passErr}</div>}
               </div>
               <div style={{background:T.paper,borderRadius:12,padding:"16px",marginBottom:18,border:`1px solid ${T.border}`}}>
                 <div style={{fontSize:11,fontWeight:700,color:T.muted,marginBottom:10,textTransform:"uppercase",letterSpacing:".5px"}}>Registration Summary</div>
@@ -518,7 +554,7 @@ const Signup=({onBack,onLogin})=>{
               {err&&<div style={{background:`${T.danger}12`,color:T.danger,borderRadius:10,padding:"10px 14px",fontSize:13,marginBottom:12,border:`1px solid ${T.danger}30`}}>{err}</div>}
               <div style={{display:"flex",gap:10}}>
                 <Btn onClick={()=>setStep(2)} out color={T.muted} style={{flex:1,padding:"11px",borderRadius:11}}>← Back</Btn>
-                <Btn onClick={register} style={{flex:2,padding:"11px",borderRadius:11}} disabled={!f.adminName||!f.adminEmail||!f.adminPass||submitting}>{submitting?"Registering…":"Complete Registration ✓"}</Btn>
+                <Btn onClick={register} style={{flex:2,padding:"11px",borderRadius:11}} disabled={!step3Ok||submitting}>{submitting?"Registering…":"Complete Registration ✓"}</Btn>
               </div>
             </>
           )}
@@ -1231,8 +1267,46 @@ const AdminPortal=({user,db,setDb,onLogout,onReload})=>{
   const[modal,setModal]=useState(null);
   const[selStu,setSelStu]=useState(null);
   const inst=db.institutes.find(i=>i.id===user.inst)||db.institutes[0];
-  const plan=PLANS.find(p=>p.id===inst.plan);
   const students=db.students.filter(s=>s.instId===user.inst);
+
+  /**
+   * Subscription comes from GET /institutes/me/subscription — the same record
+   * the backend enforces limits against. It used to be looked up in the
+   * hardcoded PLANS array, so a school with a custom cap of 150 still saw its
+   * plan's 800 and no frontend change could ever have fixed it.
+   */
+  const sub=db.subscription??null;
+  const plan=sub?.plan??PLANS.find(p=>p.id===inst.plan);
+  const studentLimit=sub?.studentLimit??plan?.maxStudents??0;
+  const seatsUsed=sub?.seatsUsed??students.length;
+  const isUnlimited=studentLimit>=9999;
+
+  // Real aggregates from GET /dashboard/admin.
+  const dash=db.adminDashboard??null;
+  const todayAtt={
+    present:dash?.kpis?.todayPresent??0,
+    absent:dash?.kpis?.todayAbsent??0,
+    late:dash?.kpis?.todayLate??0,
+    leave:dash?.kpis?.todayLeave??0,
+    rate:dash?.kpis?.attendanceRateToday??0,
+  };
+  const todayMarked=Boolean(dash?.kpis?.attendanceMarkedToday);
+  const feeOutstanding=dash?.fees?.outstanding??0;
+  const unpaidStudents=dash?.fees?.unpaidStudents??0;
+
+  // Portal-level feedback so actions outside the nested tab components
+  // (notices, subscription) have somewhere visible to report success/failure.
+  const[pErr,setPErr]=useState("");
+  const[pNote,setPNote]=useState("");
+  const PortalFeedback=()=>(!pErr&&!pNote)?null:(
+    <div style={{marginBottom:14,padding:"11px 16px",borderRadius:11,fontSize:13,fontWeight:600,
+      background:pErr?`${T.danger}12`:`${T.success}12`,color:pErr?T.danger:T.success,
+      border:`1px solid ${pErr?T.danger:T.success}30`,display:"flex",justifyContent:"space-between",gap:12}}>
+      <span>{pErr||pNote}</span>
+      <span onClick={()=>{setPErr("");setPNote("");}} style={{cursor:"pointer",opacity:.6}}>×</span>
+    </div>
+  );
+
   const teachers=db.teachers.filter(t=>t.instId===user.inst);
   const parents=db.parents.filter(p=>p.instId===user.inst);
   const notices=db.notices.filter(n=>n.instId===user.inst);
@@ -1254,6 +1328,27 @@ const AdminPortal=({user,db,setDb,onLogout,onReload})=>{
     "Everyone":[],
     "Parents only":["PARENT"],
     "Teachers only":["TEACHER"],
+  };
+
+  const[editNotice,setEditNotice]=useState(null);
+  const[noticeBusy,setNoticeBusy]=useState("");
+
+  /**
+   * Delete is confirmed, then goes to the API. The backend re-checks that the
+   * notice belongs to the caller's institute, so this is not the only guard.
+   */
+  const removeNotice=async n=>{
+    if(!window.confirm(`Delete "${n.title}"?\n\nIt will disappear for every teacher and parent who can currently see it.\n\nThis cannot be undone.`))return;
+    setNoticeBusy(n.id);setPErr("");setPNote("");
+    try{
+      await api.notices.remove(n.id);
+      setPNote(`"${n.title}" deleted.`);
+      onReload?.();
+    }catch(e){
+      setPErr(e.message||"Could not delete the notice.");
+    }finally{
+      setNoticeBusy("");
+    }
   };
 
   /**
@@ -1440,6 +1535,21 @@ const AdminPortal=({user,db,setDb,onLogout,onReload})=>{
       return `${r.updated} invoice(s) marked overdue.`;
     });
 
+    /**
+     * Reminders go to guardians of students with unpaid invoices, through the
+     * existing message + email service. Without SMTP the email falls back to
+     * the server console, but the in-app message is still created — so the
+     * action never silently does nothing.
+     */
+    const remind=()=>run("remind",async()=>{
+      if(!window.confirm("Send a fee reminder to every guardian with an unpaid invoice?\n\nEach guardian gets one message listing all their children's outstanding fees."))
+        return null;
+      const r=await api.fees.remind();
+      if(!r.sent) return "No unpaid invoices — nobody needed reminding.";
+      return `Reminder sent to ${r.sent} guardian(s) covering ${r.invoices} invoice(s)` +
+        (r.skipped?.length ? ` · ${r.skipped.length} student(s) skipped (no guardian linked)` : "") + ".";
+    });
+
     const exportCsv=()=>{
       const rows=invoices.map(i=>({
         student:i.student.name, roll:i.student.rollNo, grade:i.student.grade,
@@ -1535,6 +1645,7 @@ const AdminPortal=({user,db,setDb,onLogout,onReload})=>{
               <div style={{fontSize:13,fontWeight:700,color:T.ink,marginBottom:12}}>Actions</div>
               <Btn out color={T.forest} full onClick={generate} disabled={busy==="generate"} style={{marginBottom:8,padding:"9px",fontSize:12}}>{busy==="generate"?"Generating…":"Generate Invoices"}</Btn>
               <Btn out color={T.warning} full onClick={overdue} disabled={busy==="overdue"} style={{marginBottom:8,padding:"9px",fontSize:12}}>{busy==="overdue"?"Updating…":"Flag Overdue"}</Btn>
+              <Btn out color={T.purple} full onClick={remind} disabled={busy==="remind"} style={{marginBottom:8,padding:"9px",fontSize:12}}>{busy==="remind"?"Sending…":"Send Fee Reminders"}</Btn>
               <Btn out color={T.blue} full onClick={exportCsv} style={{marginBottom:8,padding:"9px",fontSize:12}}>Download Fee Report</Btn>
             </Crd>
 
@@ -1744,6 +1855,179 @@ const AdminPortal=({user,db,setDb,onLogout,onReload})=>{
     );
   };
 
+  /**
+   * Live subscription card. Everything here reads and writes
+   * /institutes/me/subscription — the same record the backend enforces
+   * student limits against, so an upgrade takes effect immediately rather
+   * than living in React state.
+   */
+  const SubscriptionCard=()=>{
+    const[busy,setBusy]=useState("");
+    const[e2,setE2]=useState("");
+    const[picking,setPicking]=useState(false);
+    const[limitDraft,setLimitDraft]=useState(String(sub?.customLimit??""));
+
+    if(!sub) return (
+      <Crd style={{padding:"26px"}}>
+        <div style={{fontSize:14,fontWeight:700,color:T.ink,marginBottom:8}}>Current Subscription</div>
+        <div style={{fontSize:13,color:T.muted}}>Loading subscription…</div>
+      </Crd>
+    );
+
+    const act=async(key,fn,confirmMsg)=>{
+      if(confirmMsg&&!window.confirm(confirmMsg))return;
+      setBusy(key);setE2("");
+      try{
+        const r=await fn();
+        setPNote(r?.__message??"Subscription updated.");
+        setPicking(false);
+        onReload?.();
+      }catch(x){
+        setE2(x.errors?.[0]?.message||x.message||"That didn't work.");
+      }finally{
+        setBusy("");
+      }
+    };
+
+    const choosePlan=p=>act(`plan-${p.id}`,async()=>{
+      await api.institutes.changeMyPlan(p.id);
+      return {__message:`Switched to the ${p.name} plan.`};
+    },`Switch to the ${p.name} plan?\n\nRs. ${p.price.toLocaleString()}/month · up to ${p.maxStudents.toLocaleString()} students.\n\nYour new student limit applies immediately. No data is affected.`);
+
+    const saveLimit=()=>act("limit",async()=>{
+      const v=limitDraft.trim()===""?null:Number(limitDraft);
+      if(v!==null&&(!Number.isInteger(v)||v<1)) throw new Error("Student limit must be a whole number of at least 1.");
+      await api.institutes.changeMyStudentLimit(v);
+      return {__message:v===null?"Limit now follows your plan.":`Student limit set to ${v}.`};
+    });
+
+    const cancel=()=>act("cancel",async()=>{
+      const r=await api.institutes.cancelMySubscription();
+      return {__message:`Cancelled. Active until ${new Date(r.subscriptionEndsAt).toDateString()} — no data is removed.`};
+    },`Cancel your subscription?\n\n• ${inst.name} keeps working until the end of the current period\n• Nothing is deleted — students, staff, marks and fees all stay\n• You can resume any time before it ends\n\nContinue?`);
+
+    const resume=()=>act("resume",async()=>{
+      await api.institutes.resumeMySubscription();
+      return {__message:"Subscription resumed."};
+    });
+
+    const pct=sub.studentLimit>0?Math.min(100,(sub.seatsUsed/sub.studentLimit)*100):0;
+    const unlimited=sub.studentLimit>=9999;
+
+    return(
+      <Crd style={{padding:"26px"}}>
+        <div style={{fontSize:14,fontWeight:700,color:T.ink,marginBottom:16}}>Current Subscription</div>
+
+        <div style={{padding:"18px",background:G(`${T.forest}15`,`${T.mint}15`),borderRadius:14,marginBottom:16,border:`1px solid ${T.forest}25`}}>
+          <div style={{fontSize:11,color:T.muted,fontWeight:700,textTransform:"uppercase",letterSpacing:".5px",marginBottom:4}}>Active Plan</div>
+          <div style={{fontFamily:"Georgia,serif",fontSize:26,fontWeight:800,color:T.forest}}>{sub.plan?.name}</div>
+          <div style={{fontSize:13,color:T.muted,marginTop:4}}>
+            Rs. {sub.plan?.price.toLocaleString()}/month · plan allows {sub.plan?.maxStudents>=9999?"unlimited":sub.plan?.maxStudents.toLocaleString()} students
+          </div>
+          <div style={{marginTop:12}}>
+            <div style={{fontSize:11,color:T.muted,marginBottom:4}}>
+              Usage: {sub.seatsUsed}/{unlimited?"∞":sub.studentLimit} students
+              {sub.customLimit!=null&&sub.customLimit<(sub.plan?.maxStudents??0)&&
+                <span style={{color:T.warning,fontWeight:600}}> · custom limit</span>}
+            </div>
+            {!unlimited&&<Bar val={pct} color={pct>=90?T.danger:T.forest}/>}
+          </div>
+        </div>
+
+        {sub.cancelAtPeriodEnd&&(
+          <div style={{background:`${T.warning}12`,border:`1px solid ${T.warning}35`,borderRadius:11,padding:"12px 14px",marginBottom:14,fontSize:12.5,color:T.ink,lineHeight:1.6}}>
+            <b style={{color:T.warning}}>Cancellation scheduled.</b> {inst.name} stays fully active until{" "}
+            <b>{sub.subscriptionEndsAt?new Date(sub.subscriptionEndsAt).toDateString():"the end of the period"}</b>. No data has been removed.
+          </div>
+        )}
+
+        {/* Adjust the cap within the plan — this is what the dashboard shows
+            and what student creation is checked against. */}
+        <div style={{display:"flex",gap:8,alignItems:"flex-end",marginBottom:14}}>
+          <div style={{flex:1}}>
+            <Inp label="Student Limit" value={limitDraft} onChange={e=>setLimitDraft(e.target.value)} type="number" min="1" placeholder={`Blank = plan max (${sub.plan?.maxStudents})`}/>
+          </div>
+          <Btn onClick={saveLimit} out color={T.forest} style={{padding:"10px 14px",fontSize:12,marginBottom:14}} disabled={busy==="limit"}>
+            {busy==="limit"?"Saving…":"Save"}
+          </Btn>
+        </div>
+
+        {e2&&<div style={{background:`${T.danger}12`,color:T.danger,borderRadius:10,padding:"10px 14px",fontSize:12.5,marginBottom:12,border:`1px solid ${T.danger}30`}}>{e2}</div>}
+
+        {picking&&(
+          <div style={{marginBottom:14,display:"flex",flexDirection:"column",gap:8}}>
+            {(sub.availablePlans??[]).filter(p=>!p.isCurrent).map(p=>(
+              <div key={p.id} style={{border:`1.5px solid ${p.selectable?T.border:`${T.danger}35`}`,borderRadius:12,padding:"12px 14px",opacity:p.selectable?1:.6}}>
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:10}}>
+                  <div>
+                    <div style={{fontSize:13.5,fontWeight:700,color:T.ink}}>{p.name} {p.isUpgrade&&<span style={{fontSize:10,color:T.forest}}>↑ upgrade</span>}</div>
+                    <div style={{fontSize:11.5,color:T.muted,marginTop:2}}>Rs. {p.price.toLocaleString()}/mo · {p.maxStudents>=9999?"unlimited":p.maxStudents.toLocaleString()} students</div>
+                    {p.blockedReason&&<div style={{fontSize:11,color:T.danger,marginTop:4}}>{p.blockedReason}</div>}
+                  </div>
+                  <Btn onClick={()=>choosePlan(p)} out color={T.forest} style={{padding:"7px 13px",fontSize:11.5}} disabled={!p.selectable||busy===`plan-${p.id}`}>
+                    {busy===`plan-${p.id}`?"…":"Select"}
+                  </Btn>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+
+        <Btn onClick={()=>setPicking(v=>!v)} full style={{marginBottom:10,padding:"11px"}}>
+          {picking?"Hide Plans":"Change Plan"}
+        </Btn>
+
+        {sub.cancelAtPeriodEnd
+          ? <Btn onClick={resume} out color={T.success} full style={{padding:"11px",fontSize:13}} disabled={busy==="resume"}>{busy==="resume"?"Resuming…":"Resume Subscription"}</Btn>
+          : <Btn onClick={cancel} out color={T.danger} full style={{padding:"11px",fontSize:13}} disabled={busy==="cancel"}>{busy==="cancel"?"Cancelling…":"Cancel Subscription"}</Btn>}
+      </Crd>
+    );
+  };
+
+  /** Edit an existing notice. The API re-checks institute ownership. */
+  const EditNoticeModal=({notice})=>{
+    const CAT_LABEL={Academic:"ACADEMIC",Finance:"FINANCE",Event:"EVENT",General:"GENERAL",Urgent:"URGENT"};
+    const[f,setF]=useState({title:notice.title,body:notice.body,cat:notice.cat||"General"});
+    const s=(k,v)=>setF(x=>({...x,[k]:v}));
+    const[saving,setSaving]=useState(false);
+    const[e2,setE2]=useState("");
+
+    const save=async()=>{
+      if(!f.title.trim()||!f.body.trim()){setE2("Title and message are both required.");return;}
+      setSaving(true);setE2("");
+      try{
+        await api.notices.update(notice.id,{
+          title:f.title.trim(),
+          body:f.body.trim(),
+          category:CAT_LABEL[f.cat]??"GENERAL",
+        });
+        setEditNotice(null);
+        setPNote(`"${f.title.trim()}" updated.`);
+        onReload?.();
+      }catch(x){
+        setE2(x.errors?.[0]?.message||x.message||"Could not update the notice.");
+      }finally{
+        setSaving(false);
+      }
+    };
+
+    return(
+      <Modal title="Edit Notice" onClose={()=>setEditNotice(null)}>
+        <Inp label="Title*" value={f.title} onChange={e=>s("title",e.target.value)}/>
+        <Sel label="Category" options={["Academic","Finance","Event","General","Urgent"]} value={f.cat} onChange={e=>s("cat",e.target.value)}/>
+        <div style={{marginBottom:14}}>
+          <div style={{fontSize:11,fontWeight:700,color:T.muted,marginBottom:6,textTransform:"uppercase",letterSpacing:".6px"}}>Message*</div>
+          <textarea rows={4} value={f.body} onChange={e=>s("body",e.target.value)} style={{width:"100%",padding:"10px 14px",borderRadius:10,border:`1.5px solid ${T.border}`,fontSize:13,color:T.ink,background:T.paper,resize:"none",outline:"none",fontFamily:"inherit"}}/>
+        </div>
+        {e2&&<div style={{background:`${T.danger}12`,color:T.danger,borderRadius:10,padding:"10px 14px",fontSize:13,marginBottom:12,border:`1px solid ${T.danger}30`}}>{e2}</div>}
+        <div style={{display:"flex",gap:10,marginTop:4}}>
+          <Btn onClick={()=>setEditNotice(null)} out color={T.muted} style={{flex:1,padding:"11px"}}>Cancel</Btn>
+          <Btn onClick={save} style={{flex:2,padding:"11px"}} disabled={!f.title.trim()||!f.body.trim()||saving}>{saving?"Saving…":"Save Changes"}</Btn>
+        </div>
+      </Modal>
+    );
+  };
+
   const UserModal=({type})=>{
     const[f,setF]=useState({name:"",email:"",phone:"",grade:"",section:"",roll:"",subject:"",rel:"",child:""});
     const s=(k,v)=>setF(x=>({...x,[k]:v}));
@@ -1815,13 +2099,23 @@ const AdminPortal=({user,db,setDb,onLogout,onReload})=>{
           </>}
         </div>
         <div style={{background:`${T.forest}10`,borderRadius:12,padding:"13px 16px",marginBottom:16,border:`1px solid ${T.forest}25`}}>
-          <div style={{fontSize:12,color:T.forest,fontWeight:700,marginBottom:3}}>🔑 Auto-generated Login</div>
-          <div style={{fontSize:12,color:T.muted}}>A login email and temporary password will be automatically generated and sent to <b>{f.email||"the provided email"}</b>.</div>
+          {/* Students are records, not users of the app — only teachers and
+              parents get accounts. The backend never creates a student login. */}
+          <div style={{fontSize:12,color:T.forest,fontWeight:700,marginBottom:3}}>
+            {type==="Student"?"👤 Student Record":"🔑 Auto-generated Login"}
+          </div>
+          <div style={{fontSize:12,color:T.muted}}>
+            {type==="Student"
+              ? <>Students don't sign in to EduConnect. Their academic information is accessed by the linked <b>parent/guardian</b> account. Any email you enter is stored as contact information only.</>
+              : <>A login email and temporary password will be generated and sent to <b>{f.email||"the provided email"}</b>.</>}
+          </div>
         </div>
         {err&&<div style={{background:`${T.danger}12`,color:T.danger,borderRadius:10,padding:"10px 14px",fontSize:13,marginBottom:12,border:`1px solid ${T.danger}30`}}>{err}</div>}
         <div style={{display:"flex",gap:10}}>
           <Btn onClick={()=>setModal(null)} out color={T.muted} style={{flex:1,padding:"11px"}}>Cancel</Btn>
-          <Btn onClick={create} style={{flex:2,padding:"11px"}} disabled={!f.name||(type!=="Student"&&!f.email)||saving}>{saving?"Creating…":"Create & Send Login"}</Btn>
+          <Btn onClick={create} style={{flex:2,padding:"11px"}} disabled={!f.name||(type!=="Student"&&!f.email)||saving}>
+            {saving?"Creating…":type==="Student"?"Add Student":"Create & Send Login"}
+          </Btn>
         </div>
       </Modal>
     );
@@ -1829,12 +2123,13 @@ const AdminPortal=({user,db,setDb,onLogout,onReload})=>{
 
   return(
     <Shell nav={nav} tab={tab} setTab={setTab} user={user} inst={inst} collapsed={col} setCollapsed={setCol} onLogout={onLogout}>
+      <PortalFeedback/>
       {/* DASHBOARD */}
       {tab==="dashboard"&&(
         <div style={{animation:"fadeUp .35s"}}>
           <SecHead pre={inst.name} title="Admin Dashboard"/>
           <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:14,marginBottom:22}}>
-            <KPI label="Students" value={inst.students} color={T.forest} icon="◈" sub={`${plan?.maxStudents===9999?"Unlimited":plan?.maxStudents} limit`}/>
+            <KPI label="Students" value={seatsUsed} color={T.forest} icon="◈" sub={isUnlimited?"Unlimited":`${studentLimit} limit`}/>
             <KPI label="Teachers" value={inst.teachers} color={T.purple} icon="◉" sub="Active staff"/>
             <KPI label="Parents" value={parents.length} color={T.blue} icon="◎" sub="Registered"/>
             <KPI label="Plan" value={plan?.name} color={T.gold} icon="◑" sub={`Rs. ${plan?.price.toLocaleString()}/mo`}/>
@@ -1871,16 +2166,35 @@ const AdminPortal=({user,db,setDb,onLogout,onReload})=>{
             <div style={{display:"flex",flexDirection:"column",gap:14}}>
               <Crd style={{padding:"22px"}}>
                 <div style={{fontSize:13,fontWeight:700,color:T.ink,marginBottom:14}}>Attendance Today</div>
-                <div style={{display:"flex",justifyContent:"center",marginBottom:12}}><Donut p={87} color={T.forest} size={84}/></div>
-                <div style={{fontSize:12,color:T.muted,textAlign:"center",marginBottom:10}}>87% of students present today</div>
-                {[["Present","87%",T.success],["Absent","8%",T.danger],["Late","5%",T.warning]].map(([l,v,c])=>(
-                  <div key={l} style={{display:"flex",justifyContent:"space-between",padding:"5px 0"}}><div style={{display:"flex",gap:6,alignItems:"center"}}><div style={{width:7,height:7,borderRadius:"50%",background:c}}/><span style={{fontSize:12,color:T.muted}}>{l}</span></div><span style={{fontSize:12,fontWeight:700,color:c}}>{v}</span></div>
-                ))}
+                {/* Real figures from /dashboard/admin. A school with no register
+                    taken today has nothing to show — say so rather than invent. */}
+                {!todayMarked ? (
+                  <div style={{textAlign:"center",padding:"18px 0"}}>
+                    <div style={{fontSize:26,marginBottom:6,opacity:.35}}>◷</div>
+                    <div style={{fontSize:12.5,color:T.muted,lineHeight:1.6}}>
+                      {students.length===0
+                        ? "No students enrolled yet."
+                        : "Attendance hasn't been taken today."}
+                    </div>
+                  </div>
+                ) : (
+                  <>
+                    <div style={{display:"flex",justifyContent:"center",marginBottom:12}}><Donut p={todayAtt.rate} color={T.forest} size={84}/></div>
+                    <div style={{fontSize:12,color:T.muted,textAlign:"center",marginBottom:10}}>{todayAtt.rate}% of students present today</div>
+                    {[["Present",todayAtt.present,T.success],["Absent",todayAtt.absent,T.danger],["Late",todayAtt.late,T.warning],["Leave",todayAtt.leave,T.muted]].map(([l,v,c])=>(
+                      <div key={l} style={{display:"flex",justifyContent:"space-between",padding:"5px 0"}}><div style={{display:"flex",gap:6,alignItems:"center"}}><div style={{width:7,height:7,borderRadius:"50%",background:c}}/><span style={{fontSize:12,color:T.muted}}>{l}</span></div><span style={{fontSize:12,fontWeight:700,color:c}}>{v}</span></div>
+                    ))}
+                  </>
+                )}
               </Crd>
-              <Crd style={{padding:"22px",border:`1.5px solid ${T.warning}44`}}>
-                <div style={{fontSize:11,fontWeight:700,color:T.warning,textTransform:"uppercase",letterSpacing:".5px",marginBottom:8}}>⚠ Fee Alert</div>
-                <div style={{fontFamily:"Georgia,serif",fontSize:20,fontWeight:800,color:T.ink}}>Rs. 87,500</div>
-                <div style={{fontSize:12,color:T.muted,marginTop:4}}>Pending from 7 students</div>
+              <Crd style={{padding:"22px",border:`1.5px solid ${feeOutstanding>0?T.warning:T.success}44`}}>
+                <div style={{fontSize:11,fontWeight:700,color:feeOutstanding>0?T.warning:T.success,textTransform:"uppercase",letterSpacing:".5px",marginBottom:8}}>{feeOutstanding>0?"⚠ Fee Alert":"✓ Fees"}</div>
+                <div style={{fontFamily:"Georgia,serif",fontSize:20,fontWeight:800,color:T.ink}}>Rs. {feeOutstanding.toLocaleString()}</div>
+                <div style={{fontSize:12,color:T.muted,marginTop:4}}>
+                  {feeOutstanding>0
+                    ? `Pending from ${unpaidStudents} student${unpaidStudents===1?"":"s"}`
+                    : students.length===0 ? "No students enrolled yet" : "Everything collected"}
+                </div>
                 <Btn onClick={()=>setTab("fees")} full style={{marginTop:12,padding:"9px",fontSize:12}}>Manage Fees →</Btn>
               </Crd>
               <Crd style={{padding:"22px"}}>
@@ -2110,9 +2424,13 @@ const AdminPortal=({user,db,setDb,onLogout,onReload})=>{
                 </div>
                 <div style={{fontFamily:"Georgia,serif",fontSize:16,fontWeight:700,color:T.ink,marginBottom:8,lineHeight:1.3}}>{n.title}</div>
                 <p style={{fontSize:13,color:T.muted,lineHeight:1.7,marginBottom:14}}>{n.body}</p>
-                <div style={{display:"flex",gap:8}}>
-                  <Bdg label="Edit" color={T.forest} bg={`${T.forest}15`} style={{cursor:"pointer"}}/>
-                  <Bdg label="Delete" color={T.danger} bg={`${T.danger}15`} style={{cursor:"pointer"}}/>
+                <div style={{display:"flex",gap:8,alignItems:"center"}}>
+                  <span onClick={()=>setEditNotice(n)} style={{cursor:"pointer"}}>
+                    <Bdg label="Edit" color={T.forest} bg={`${T.forest}15`}/>
+                  </span>
+                  <span onClick={()=>removeNotice(n)} style={{cursor:noticeBusy===n.id?"default":"pointer",opacity:noticeBusy===n.id?.5:1}}>
+                    <Bdg label={noticeBusy===n.id?"Deleting…":"Delete"} color={T.danger} bg={`${T.danger}15`}/>
+                  </span>
                 </div>
               </Crd>
             ))}
@@ -2128,20 +2446,7 @@ const AdminPortal=({user,db,setDb,onLogout,onReload})=>{
           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:18}}>
             <InstituteSettingsCard/>
             <div style={{display:"flex",flexDirection:"column",gap:16}}>
-              <Crd style={{padding:"26px"}}>
-                <div style={{fontSize:14,fontWeight:700,color:T.ink,marginBottom:16}}>Current Subscription</div>
-                <div style={{padding:"18px",background:G(`${T.forest}15`,`${T.mint}15`),borderRadius:14,marginBottom:16,border:`1px solid ${T.forest}25`}}>
-                  <div style={{fontSize:11,color:T.muted,fontWeight:700,textTransform:"uppercase",letterSpacing:".5px",marginBottom:4}}>Active Plan</div>
-                  <div style={{fontFamily:"Georgia,serif",fontSize:26,fontWeight:800,color:T.forest}}>{plan?.name}</div>
-                  <div style={{fontSize:13,color:T.muted,marginTop:4}}>Rs. {plan?.price.toLocaleString()}/month · Up to {plan?.maxStudents===9999?"unlimited":plan?.maxStudents.toLocaleString()} students</div>
-                  <div style={{marginTop:12}}>
-                    <div style={{fontSize:11,color:T.muted,marginBottom:4}}>Usage: {inst.students}/{plan?.maxStudents===9999?"∞":plan?.maxStudents} students</div>
-                    {plan?.maxStudents!==9999&&<Bar val={inst.students/plan.maxStudents*100} color={T.forest}/>}
-                  </div>
-                </div>
-                <Btn full style={{marginBottom:10,padding:"11px"}}>Upgrade Plan</Btn>
-                <Btn out color={T.danger} full style={{padding:"11px",fontSize:13}}>Cancel Subscription</Btn>
-              </Crd>
+              <SubscriptionCard/>
               <Crd style={{padding:"26px"}}>
                 <div style={{fontSize:14,fontWeight:700,color:T.ink,marginBottom:16}}>Notifications</div>
                 {[["Fee reminders to parents",true],["Attendance alerts",true],["AI weekly reports",false],["Exam notifications",true]].map(([l,on])=>(
@@ -2157,6 +2462,7 @@ const AdminPortal=({user,db,setDb,onLogout,onReload})=>{
       )}
       {modal&&["Student","Teacher","Parent"].includes(modal)&&<UserModal type={modal}/>}
       {modal==="notice"&&<NoticeModal/>}
+      {editNotice&&<EditNoticeModal notice={editNotice}/>}
       {editing&&<EditModal type={editing.type} record={editing.record}/>}
 
       {/* Row-action feedback — fixed so it's visible whichever tab you're on. */}
@@ -3386,6 +3692,7 @@ export default function App() {
 
   return <Splash title="Unknown role" detail={`No portal exists for "${user.role}".`} tone={T.danger} action={logout} actionLabel="Sign out"/>;
 }
+
 
 
 

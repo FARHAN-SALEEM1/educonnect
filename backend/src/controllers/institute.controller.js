@@ -5,6 +5,11 @@ import { created, ok, paginate, pageMeta } from "../utils/response.js";
 import { nextInstituteCode } from "../utils/codes.js";
 import { audit } from "../utils/audit.js";
 import { periodKey } from "../utils/academics.js";
+import {
+  effectiveStudentLimit,
+  endOfCurrentPeriod,
+  subscriptionSummary,
+} from "../utils/subscription.js";
 
 /** GET /api/plans — public, powers the pricing section on the landing page. */
 export const listPlans = asyncHandler(async (_req, res) => {
@@ -59,7 +64,10 @@ export const listInstitutes = asyncHandler(async (req, res) => {
     parents: i._count.parents,
     users: i._count.users,
     seatsUsed: i._count.students,
-    seatsLimit: i.plan.maxStudents,
+    seatsLimit: effectiveStudentLimit(i),
+    studentLimit: i.studentLimit,
+    cancelAtPeriodEnd: i.cancelAtPeriodEnd,
+    subscriptionEndsAt: i.subscriptionEndsAt,
     _count: undefined,
   }));
 
@@ -192,6 +200,206 @@ export const changeStatus = asyncHandler(async (req, res) => {
   });
 
   return ok(res, institute, `Institute is now ${req.body.status.toLowerCase()}`);
+});
+
+// ───────────────────── Admin self-service subscription ─────────────────────
+
+const SUB_INCLUDE = {
+  plan: true,
+  _count: { select: { students: { where: { deletedAt: null } } } },
+};
+
+const loadMyInstitute = async (instituteId) => {
+  const institute = await prisma.institute.findUnique({
+    where: { id: instituteId },
+    include: SUB_INCLUDE,
+  });
+  if (!institute) throw ApiError.notFound("Institute not found");
+  return institute;
+};
+
+/**
+ * GET /api/institutes/me/subscription
+ * What the admin's institute is actually on, plus the plans it could move to.
+ * One source of truth for the dashboard and the settings page.
+ */
+export const mySubscription = asyncHandler(async (req, res) => {
+  const institute = await loadMyInstitute(req.instituteId);
+  const students = institute._count.students;
+
+  const plans = await prisma.plan.findMany({ where: { isActive: true }, orderBy: { price: "asc" } });
+
+  return ok(res, {
+    ...subscriptionSummary(institute, students),
+    institute: { id: institute.id, name: institute.name, code: institute.code },
+    availablePlans: plans.map((p) => ({
+      id: p.id,
+      name: p.name,
+      price: p.price,
+      maxStudents: p.maxStudents,
+      color: p.color,
+      features: p.features,
+      isCurrent: p.id === institute.planId,
+      isUpgrade: p.price > institute.plan.price,
+      // A plan they can't fit into is shown with the reason rather than hidden.
+      selectable: p.id !== institute.planId && p.maxStudents >= students,
+      blockedReason:
+        p.maxStudents < students
+          ? `Your ${students} students exceed this plan's ${p.maxStudents} limit`
+          : null,
+    })),
+  });
+});
+
+/**
+ * POST /api/institutes/me/subscription/plan
+ * Admin self-service plan change. Writes the same `planId` the backend
+ * enforces against, so new limits apply immediately — no frontend-only state.
+ */
+export const changeMyPlan = asyncHandler(async (req, res) => {
+  const { planId, studentLimit } = req.body;
+
+  const institute = await loadMyInstitute(req.instituteId);
+  const plan = await prisma.plan.findFirst({ where: { id: planId, isActive: true } });
+
+  if (!plan) throw ApiError.badRequest("That plan does not exist or is no longer offered");
+  if (plan.id === institute.planId) throw ApiError.badRequest(`You are already on the ${plan.name} plan`);
+
+  const students = institute._count.students;
+  if (students > plan.maxStudents) {
+    throw ApiError.badRequest(
+      `Cannot move to ${plan.name}: it allows ${plan.maxStudents} students and you have ${students}.`
+    );
+  }
+
+  // Carry any custom cap across, clamped so it can never exceed the new plan.
+  const nextLimit =
+    studentLimit != null
+      ? Math.min(studentLimit, plan.maxStudents)
+      : institute.studentLimit != null
+        ? Math.min(institute.studentLimit, plan.maxStudents)
+        : null;
+
+  if (nextLimit != null && nextLimit < students) {
+    throw ApiError.badRequest(`A limit of ${nextLimit} is below your current ${students} students.`);
+  }
+
+  const updated = await prisma.institute.update({
+    where: { id: institute.id },
+    data: {
+      planId: plan.id,
+      studentLimit: nextLimit,
+      // Changing plan is an intent to continue — undo a pending cancellation.
+      cancelAtPeriodEnd: false,
+      subscriptionEndsAt: null,
+    },
+    include: SUB_INCLUDE,
+  });
+
+  audit(req, {
+    action: "subscription.change_plan",
+    entity: "Institute",
+    entityId: institute.id,
+    meta: { from: institute.plan.name, to: plan.name, studentLimit: nextLimit },
+  });
+
+  return ok(
+    res,
+    subscriptionSummary(updated, updated._count.students),
+    `Switched to ${plan.name} — your student limit is now ${effectiveStudentLimit(updated)}.`
+  );
+});
+
+/** PATCH /api/institutes/me/subscription/limit — adjust the cap within the plan. */
+export const changeMyStudentLimit = asyncHandler(async (req, res) => {
+  const { studentLimit } = req.body;
+  const institute = await loadMyInstitute(req.instituteId);
+  const students = institute._count.students;
+
+  if (studentLimit != null) {
+    if (studentLimit > institute.plan.maxStudents) {
+      throw ApiError.badRequest(
+        `The ${institute.plan.name} plan allows at most ${institute.plan.maxStudents} students. Upgrade to raise the limit.`
+      );
+    }
+    if (studentLimit < students) {
+      throw ApiError.badRequest(`You already have ${students} students, so the limit cannot be ${studentLimit}.`);
+    }
+  }
+
+  const updated = await prisma.institute.update({
+    where: { id: institute.id },
+    data: { studentLimit: studentLimit ?? null },
+    include: SUB_INCLUDE,
+  });
+
+  audit(req, {
+    action: "subscription.change_limit",
+    entity: "Institute",
+    entityId: institute.id,
+    meta: { studentLimit: studentLimit ?? null },
+  });
+
+  return ok(
+    res,
+    subscriptionSummary(updated, updated._count.students),
+    studentLimit == null
+      ? `Limit now follows the ${institute.plan.name} plan (${institute.plan.maxStudents} students).`
+      : `Student limit set to ${studentLimit}.`
+  );
+});
+
+/**
+ * POST /api/institutes/me/subscription/cancel
+ * End-of-period cancellation: nothing is deleted, the school keeps working
+ * until the period ends, and it stays visible to the super admin throughout.
+ */
+export const cancelMySubscription = asyncHandler(async (req, res) => {
+  const institute = await loadMyInstitute(req.instituteId);
+  if (institute.cancelAtPeriodEnd) {
+    throw ApiError.badRequest("Your subscription is already scheduled to cancel");
+  }
+
+  const endsAt = endOfCurrentPeriod();
+
+  const updated = await prisma.institute.update({
+    where: { id: institute.id },
+    data: { cancelAtPeriodEnd: true, subscriptionEndsAt: endsAt },
+    include: SUB_INCLUDE,
+  });
+
+  audit(req, {
+    action: "subscription.cancel",
+    entity: "Institute",
+    entityId: institute.id,
+    meta: { endsAt, reason: req.body?.reason ?? null },
+  });
+
+  return ok(
+    res,
+    subscriptionSummary(updated, updated._count.students),
+    `Subscription cancelled. ${institute.name} stays fully active until ${endsAt.toDateString()} and no data is removed.`
+  );
+});
+
+/** POST /api/institutes/me/subscription/resume */
+export const resumeMySubscription = asyncHandler(async (req, res) => {
+  const institute = await loadMyInstitute(req.instituteId);
+  if (!institute.cancelAtPeriodEnd) throw ApiError.badRequest("Your subscription is not cancelled");
+
+  const updated = await prisma.institute.update({
+    where: { id: institute.id },
+    data: { cancelAtPeriodEnd: false, subscriptionEndsAt: null },
+    include: SUB_INCLUDE,
+  });
+
+  audit(req, { action: "subscription.resume", entity: "Institute", entityId: institute.id });
+
+  return ok(
+    res,
+    subscriptionSummary(updated, updated._count.students),
+    "Subscription resumed — the scheduled cancellation has been removed."
+  );
 });
 
 /**

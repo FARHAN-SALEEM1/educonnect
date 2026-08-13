@@ -94,14 +94,19 @@ async function loadForRole(user) {
     }
 
     case "admin": {
-      const [institute, students, teachers, parents, notices, messages] = await Promise.all([
-        api.institutes.get(user.inst),
-        fetchAll(api.students.list),
-        fetchAll(api.teachers.list),
-        fetchAll(api.parents.list),
-        fetchAll(api.notices.list),
-        fetchAll(api.messages.list, { box: "all" }),
-      ]);
+      const [institute, students, teachers, parents, notices, messages, dash, subscription] =
+        await Promise.all([
+          api.institutes.get(user.inst),
+          fetchAll(api.students.list),
+          fetchAll(api.teachers.list),
+          fetchAll(api.parents.list),
+          fetchAll(api.notices.list),
+          fetchAll(api.messages.list, { box: "all" }),
+          // Real attendance/fee aggregates — the dashboard tiles used to be
+          // hardcoded because this was never fetched.
+          api.dashboard.admin(),
+          api.institutes.mySubscription(),
+        ]);
 
       return {
         ...EMPTY,
@@ -111,6 +116,8 @@ async function loadForRole(user) {
         parents: parents.map(toLegacyParent),
         notices: notices.map(toLegacyNotice),
         messages: messages.map((m) => toLegacyMessage(m, user.id)),
+        adminDashboard: dash,
+        subscription,
         truncated: students.truncated,
         studentTotal: students.total,
       };
