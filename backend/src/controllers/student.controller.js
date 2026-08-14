@@ -15,8 +15,52 @@ import {
 } from "../utils/academics.js";
 import { generateInsightsForStudent } from "../services/insight.service.js";
 import { assertSeatsAvailable, seatsRemaining } from "../utils/subscription.js";
+import { emailField, phone as phoneRule } from "../validators/common.js";
 
 const DAY_LABELS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+
+/**
+ * Runs a spreadsheet cell through the same phone rule every other route uses,
+ * and returns a per-row problem string rather than throwing.
+ *
+ * The import schema keeps each cell a loose string on purpose so one bad value
+ * can't reject the whole file with an opaque `rows.47.phone` path — problems
+ * are collected per row and reported back with a line number. That left phone
+ * numbers unchecked entirely, so the bulk path could write values that the
+ * single-record endpoints would refuse. Delegating to the shared rule keeps
+ * one source of truth: change `validators/common.js` and this follows.
+ */
+const phoneProblem = (value, label) => {
+  if (value == null) return null;
+  const raw = String(value).trim();
+  if (!raw) return null; // blank is fine — phone is optional on both records
+  const result = phoneRule.safeParse(raw);
+  return result.success ? null : `${label} — ${result.error.issues[0].message}`;
+};
+
+/**
+ * The same email rule as every other route, returning a per-row problem *and*
+ * the normalised address.
+ *
+ * The import used to carry its own looser regex, so the bulk path accepted
+ * addresses the single-record endpoints reject. It also stored the address
+ * exactly as typed, while `emailField` lowercases everywhere else — and the
+ * guardian lookup below matches on `email`, which Postgres compares
+ * case-sensitively. A spreadsheet saying `A@x.com` therefore missed a stored
+ * `a@x.com` and created a second parent for the same person, and two sibling
+ * rows spelled with different casing created two guardians instead of sharing
+ * one. Returning the parsed value is what keeps that dedup honest.
+ */
+const emailProblem = (value, label) => {
+  const blank = { problem: null, value: null };
+  if (value == null) return blank;
+  const raw = String(value).trim();
+  if (!raw) return blank; // a guardian is optional; no email simply means none
+  const result = emailField.safeParse(raw);
+  return result.success
+    ? { problem: null, value: result.data }
+    : { problem: `${label} — ${result.error.issues[0].message}`, value: null };
+};
 
 /** GET /api/students */
 export const listStudents = asyncHandler(async (req, res) => {
@@ -50,10 +94,20 @@ export const listStudents = asyncHandler(async (req, res) => {
         parent: { select: { id: true, name: true, phone: true, email: true, relation: true } },
         enrollments: {
           select: {
+            id: true,
             currentScore: true,
             previousScore: true,
             letterGrade: true,
-            subject: { select: { id: true, name: true, color: true } },
+            subject: {
+              select: {
+                id: true,
+                name: true,
+                color: true,
+                // The teacher portal matches its own roster by subject teacher;
+                // without this the name is null and every such filter misses.
+                teacher: { select: { id: true, name: true } },
+              },
+            },
           },
         },
         institute: { select: { id: true, name: true, code: true } },
@@ -135,9 +189,12 @@ export const listStudents = asyncHandler(async (req, res) => {
       topSubjectColor: best?.subject.color ?? null,
       subjectCount: s.enrollments.length,
       subjects: s.enrollments.map((e) => ({
+        enrollmentId: e.id,
         subjectId: e.subject.id,
         name: e.subject.name,
         color: e.subject.color,
+        teacher: e.subject.teacher?.name ?? null,
+        teacherId: e.subject.teacher?.id ?? null,
         score: e.currentScore,
         previousScore: e.previousScore,
         grade: e.letterGrade,
@@ -413,12 +470,17 @@ export const importStudents = asyncHandler(async (req, res) => {
     if (roll && takenRolls.has(roll)) problems.push(`roll number "${roll}" already exists`);
     if (roll && seenRolls.has(roll)) problems.push(`roll number "${roll}" is duplicated in this file`);
 
-    if (row.guardianEmail && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(row.guardianEmail.trim())) {
-      problems.push("guardianEmail is not a valid email");
-    }
     if (row.dob && Number.isNaN(new Date(row.dob).getTime())) {
       problems.push("dob is not a valid date (use YYYY-MM-DD)");
     }
+
+    // Email and both phone columns go through the same rules as every other route.
+    const guardianEmail = emailProblem(row.guardianEmail, "guardianEmail");
+    if (guardianEmail.problem) problems.push(guardianEmail.problem);
+    const phoneIssue = phoneProblem(row.phone, "phone");
+    if (phoneIssue) problems.push(phoneIssue);
+    const guardianPhoneIssue = phoneProblem(row.guardianPhone, "guardianPhone");
+    if (guardianPhoneIssue) problems.push(guardianPhoneIssue);
 
     if (problems.length) {
       errors.push({ line, name: row.name ?? "(blank)", problems });
@@ -426,7 +488,9 @@ export const importStudents = asyncHandler(async (req, res) => {
     }
 
     seenRolls.add(roll);
-    valid.push({ ...row, rollNo: roll, line });
+    // Carry the normalised address forward so the guardian lookup and the
+    // record it writes agree with each other and with the rest of the API.
+    valid.push({ ...row, rollNo: roll, guardianEmail: guardianEmail.value, line });
   });
 
   if (errors.length && !partial) {
@@ -445,7 +509,9 @@ export const importStudents = asyncHandler(async (req, res) => {
     // Reuse a guardian across siblings instead of creating duplicates.
     const parentByEmail = new Map();
     if (createParents) {
-      const emails = [...new Set(valid.map((r) => r.guardianEmail?.trim()).filter(Boolean))];
+      // Already trimmed and lowercased by emailProblem, so this matches what
+      // the other routes stored rather than whatever casing the file used.
+      const emails = [...new Set(valid.map((r) => r.guardianEmail).filter(Boolean))];
       if (emails.length) {
         const found = await tx.parent.findMany({
           where: { instituteId, email: { in: emails } },
@@ -461,8 +527,8 @@ export const importStudents = asyncHandler(async (req, res) => {
     for (const [i, row] of valid.entries()) {
       let parentId = null;
 
-      if (createParents && row.guardianEmail?.trim()) {
-        const email = row.guardianEmail.trim();
+      if (createParents && row.guardianEmail) {
+        const email = row.guardianEmail; // normalised above
         let parent = parentByEmail.get(email);
 
         if (!parent) {
