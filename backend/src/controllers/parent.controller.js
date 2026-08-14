@@ -8,6 +8,7 @@ import crypto from "node:crypto";
 import { hashPassword } from "../utils/password.js";
 import { audit } from "../utils/audit.js";
 import { emailEnabled, sendWelcome } from "../services/email.service.js";
+import { notificationEnabled } from "../utils/notifications.js";
 import { attendanceSummary, averageScore, calculateGpa } from "../utils/academics.js";
 
 /** GET /api/parents */
@@ -181,11 +182,13 @@ export const createParent = asyncHandler(async (req, res) => {
 
   audit(req, { action: "parent.create", entity: "Parent", entityId: parent.id });
 
-  if (createLogin && !password) {
-    const institute = await prisma.institute.findUnique({
-      where: { id: instituteId },
-      select: { name: true },
-    });
+  const institute = await prisma.institute.findUnique({
+    where: { id: instituteId },
+    select: { name: true, notificationSettings: true },
+  });
+
+  // Honours the "Welcome emails" toggle rather than always sending.
+  if (createLogin && !password && notificationEnabled(institute, "welcomeEmails")) {
     await sendWelcome({
       to: parent.email,
       name: parent.name,

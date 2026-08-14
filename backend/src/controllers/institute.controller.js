@@ -10,6 +10,11 @@ import {
   endOfCurrentPeriod,
   subscriptionSummary,
 } from "../utils/subscription.js";
+import {
+  NOTIFICATION_PREFS,
+  notificationSettings,
+  sanitizeNotificationSettings,
+} from "../utils/notifications.js";
 
 /** GET /api/plans — public, powers the pricing section on the landing page. */
 export const listPlans = asyncHandler(async (_req, res) => {
@@ -200,6 +205,71 @@ export const changeStatus = asyncHandler(async (req, res) => {
   });
 
   return ok(res, institute, `Institute is now ${req.body.status.toLowerCase()}`);
+});
+
+/** GET /api/institutes/me/notifications */
+export const getNotificationSettings = asyncHandler(async (req, res) => {
+  const institute = await prisma.institute.findUnique({
+    where: { id: req.instituteId },
+    select: { notificationSettings: true },
+  });
+  if (!institute) throw ApiError.notFound("Institute not found");
+
+  const values = notificationSettings(institute);
+  return ok(
+    res,
+    NOTIFICATION_PREFS.map((p) => ({
+      key: p.key,
+      label: p.label,
+      description: p.description,
+      controls: p.controls,
+      enabled: values[p.key],
+    }))
+  );
+});
+
+/** PATCH /api/institutes/me/notifications — body is { key: boolean, … } */
+export const updateNotificationSettings = asyncHandler(async (req, res) => {
+  const patch = sanitizeNotificationSettings(req.body);
+  if (!Object.keys(patch).length) {
+    throw ApiError.badRequest(
+      `No valid settings provided. Expected any of: ${NOTIFICATION_PREFS.map((p) => p.key).join(", ")}`
+    );
+  }
+
+  const institute = await prisma.institute.findUnique({
+    where: { id: req.instituteId },
+    select: { notificationSettings: true },
+  });
+  if (!institute) throw ApiError.notFound("Institute not found");
+
+  const merged = { ...notificationSettings(institute), ...patch };
+
+  const updated = await prisma.institute.update({
+    where: { id: req.instituteId },
+    data: { notificationSettings: merged },
+    select: { notificationSettings: true },
+  });
+
+  audit(req, {
+    action: "institute.notification_settings",
+    entity: "Institute",
+    entityId: req.instituteId,
+    meta: patch,
+  });
+
+  const values = notificationSettings(updated);
+  return ok(
+    res,
+    NOTIFICATION_PREFS.map((p) => ({
+      key: p.key,
+      label: p.label,
+      description: p.description,
+      controls: p.controls,
+      enabled: values[p.key],
+    })),
+    "Notification settings saved."
+  );
 });
 
 // ───────────────────── Admin self-service subscription ─────────────────────

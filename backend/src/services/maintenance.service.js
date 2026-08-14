@@ -36,12 +36,35 @@ export async function purgeExpiredResetTokens() {
 }
 
 /**
+ * Flips cancelled subscriptions to EXPIRED once their paid period ends.
+ *
+ * Access control does NOT depend on this running — `accessBlock()` computes
+ * expiry from the date on every request, so a lapsed institute is locked out
+ * immediately. This sweep exists so the stored status matches reality for
+ * listings, reports and the super-admin view.
+ */
+export async function expireLapsedSubscriptions() {
+  const { count } = await prisma.institute.updateMany({
+    where: {
+      cancelAtPeriodEnd: true,
+      subscriptionEndsAt: { lte: new Date() },
+      status: { in: ["ACTIVE", "PENDING"] },
+    },
+    data: { status: "EXPIRED" },
+  });
+
+  if (count) console.log(`[maintenance] ${count} subscription(s) expired`);
+  return count;
+}
+
+/**
  * Runs the sweeps on an interval. Deliberately in-process rather than a cron
  * container: one less moving part to deploy, and the work is trivial.
  */
 export function startMaintenance({ intervalHours = 6 } = {}) {
   const run = async () => {
     try {
+      await expireLapsedSubscriptions();
       await purgeExpiredTokens();
       await purgeExpiredResetTokens();
     } catch (err) {

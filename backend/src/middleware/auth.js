@@ -2,6 +2,7 @@ import { prisma } from "../config/prisma.js";
 import { ApiError } from "../utils/ApiError.js";
 import { asyncHandler } from "../utils/asyncHandler.js";
 import { verifyAccessToken } from "../utils/jwt.js";
+import { accessBlock } from "../utils/subscription.js";
 
 /**
  * Verifies the Bearer token and attaches the live user record to req.user.
@@ -45,22 +46,14 @@ export const authenticate = asyncHandler(async (req, _res, next) => {
   if (user.instituteId) {
     const institute = await prisma.institute.findUnique({
       where: { id: user.instituteId },
-      select: { status: true, name: true },
+      select: { status: true, name: true, cancelAtPeriodEnd: true, subscriptionEndsAt: true },
     });
-    if (!institute) throw ApiError.forbidden("Your institute no longer exists");
-
     // Checked on EVERY request, not just at login, so suspending an institute
-    // cuts off sessions that are already authenticated.
-    if (institute.status === "SUSPENDED") {
-      throw ApiError.forbidden(
-        "Your institute account has been suspended. Please contact the administrator."
-      );
-    }
-    if (institute.status === "CANCELLED") {
-      throw ApiError.forbidden(
-        "Your institute account has been closed. Please contact the administrator."
-      );
-    }
+    // or letting a subscription lapse cuts off sessions that are already
+    // authenticated. Expiry is computed from the date, not the stored status,
+    // so it applies the instant the period ends.
+    const block = accessBlock(institute);
+    if (block) throw ApiError.forbidden(block.message);
   }
 
   req.user = {

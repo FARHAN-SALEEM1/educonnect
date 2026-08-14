@@ -16,6 +16,7 @@ import crypto from "node:crypto";
 import { nextInstituteCode } from "../utils/codes.js";
 import { audit } from "../utils/audit.js";
 import { sendPasswordChanged, sendPasswordReset } from "../services/email.service.js";
+import { accessBlock } from "../utils/subscription.js";
 import { periodKey } from "../utils/academics.js";
 import { getSetting } from "./platform.controller.js";
 
@@ -106,17 +107,11 @@ export const login = asyncHandler(async (req, res) => {
   }
   if (!user.isActive) throw ApiError.forbidden("Your account has been deactivated");
 
-  // Same wording as the per-request check in middleware/auth.js, so a user
-  // sees one consistent explanation whether they are logging in or already in.
-  if (user.institute?.status === "SUSPENDED") {
-    throw ApiError.forbidden(
-      "Your institute account has been suspended. Please contact the administrator."
-    );
-  }
-  if (user.institute?.status === "CANCELLED") {
-    throw ApiError.forbidden(
-      "Your institute account has been closed. Please contact the administrator."
-    );
+  // Exactly the same rule as the per-request check in middleware/auth.js, so
+  // a user sees one consistent explanation whether logging in or already in.
+  if (user.institute) {
+    const block = accessBlock(user.institute);
+    if (block) throw ApiError.forbidden(block.message);
   }
 
   const tokens = await issueSession(user, req, res);

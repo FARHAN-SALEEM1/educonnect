@@ -91,17 +91,17 @@ const PLANS = [
 const INSTITUTES = [
   {
     code: "INS001", name: "Beaconhouse School", city: "Lahore", planId: "growth",
-    email: "admin@beaconhouse.edu", phone: "042-111-222", logo: "🏫", color: T.forest,
+    email: "admin@beaconhouse.edu", phone: "03001112220", logo: "🏫", color: T.forest,
     status: "ACTIVE", joinedAt: new Date("2025-08-01"), defaultMonthlyFee: 12500,
   },
   {
     code: "INS002", name: "LACAS", city: "Karachi", planId: "elite",
-    email: "admin@lacas.edu", phone: "021-333-444", logo: "🎓", color: T.purple,
+    email: "admin@lacas.edu", phone: "03213334440", logo: "🎓", color: T.purple,
     status: "ACTIVE", joinedAt: new Date("2025-09-15"), defaultMonthlyFee: 18000,
   },
   {
     code: "INS003", name: "The City School", city: "Islamabad", planId: "starter",
-    email: "admin@citys.edu", phone: "051-555-666", logo: "📚", color: T.blue,
+    email: "admin@citys.edu", phone: "03335556660", logo: "📚", color: T.blue,
     status: "ACTIVE", joinedAt: new Date("2025-11-01"), defaultMonthlyFee: 9500,
   },
 ];
@@ -124,21 +124,21 @@ const BHS_SUBJECTS = [
 ];
 
 const BHS_TEACHERS = [
-  { code: "TCH001", name: "Mr. Hassan",  email: "hassan@bhs.edu",  phone: "0300-1111111", designation: "Senior Mathematics Teacher", qualification: "MSc Mathematics" },
-  { code: "TCH002", name: "Ms. Nadia",   email: "nadia@bhs.edu",   phone: "0300-3333333", designation: "Physics Teacher", qualification: "MSc Physics" },
-  { code: "TCH003", name: "Ms. Fatima",  email: "fatima@bhs.edu",  phone: "0300-4444444", designation: "Chemistry Teacher", qualification: "MSc Chemistry" },
-  { code: "TCH004", name: "Ms. Hira",    email: "hira@bhs.edu",    phone: "0300-5555555", designation: "Computer Science Teacher", qualification: "BS Computer Science" },
-  { code: "TCH005", name: "Mr. Tariq",   email: "tariq@bhs.edu",   phone: "0300-6666666", designation: "Urdu Teacher", qualification: "MA Urdu" },
-  { code: "TCH006", name: "Mr. Ali",     email: "ali.t@bhs.edu",   phone: "0300-7777777", designation: "English Teacher", qualification: "MA English" },
-  { code: "TCH007", name: "Ms. Sara",    email: "sara.t@bhs.edu",  phone: "0300-8888888", designation: "Biology Teacher", qualification: "MSc Biology" },
-  { code: "TCH008", name: "Ms. Hina",    email: "hina@bhs.edu",    phone: "0300-9999999", designation: "Pak. Studies Teacher", qualification: "MA History" },
+  { code: "TCH001", name: "Mr. Hassan",  email: "hassan@bhs.edu",  phone: "03001111111", designation: "Senior Mathematics Teacher", qualification: "MSc Mathematics" },
+  { code: "TCH002", name: "Ms. Nadia",   email: "nadia@bhs.edu",   phone: "03003333333", designation: "Physics Teacher", qualification: "MSc Physics" },
+  { code: "TCH003", name: "Ms. Fatima",  email: "fatima@bhs.edu",  phone: "03004444444", designation: "Chemistry Teacher", qualification: "MSc Chemistry" },
+  { code: "TCH004", name: "Ms. Hira",    email: "hira@bhs.edu",    phone: "03005555555", designation: "Computer Science Teacher", qualification: "BS Computer Science" },
+  { code: "TCH005", name: "Mr. Tariq",   email: "tariq@bhs.edu",   phone: "03006666666", designation: "Urdu Teacher", qualification: "MA Urdu" },
+  { code: "TCH006", name: "Mr. Ali",     email: "ali.t@bhs.edu",   phone: "03007777777", designation: "English Teacher", qualification: "MA English" },
+  { code: "TCH007", name: "Ms. Sara",    email: "sara.t@bhs.edu",  phone: "03008888888", designation: "Biology Teacher", qualification: "MSc Biology" },
+  { code: "TCH008", name: "Ms. Hina",    email: "hina@bhs.edu",    phone: "03009999999", designation: "Pak. Studies Teacher", qualification: "MA History" },
 ];
 
 // Student performance mirrors the frontend's demo records.
 const STUDENTS = [
   {
     code: "STU001", name: "Zain Ahmed", grade: "Grade 8", section: "A", rollNo: "2024-081",
-    dob: new Date("2010-03-15"), gender: "Male", bloodGroup: "B+", phone: "0300-1234567",
+    dob: new Date("2010-03-15"), gender: "Male", bloodGroup: "B+", phone: "03001234567",
     address: "House 12, Block C, DHA Lahore", parentCode: "PAR001",
     scores: [
       { subject: "Mathematics",  current: 91, previous: 85 },
@@ -161,7 +161,7 @@ const STUDENTS = [
   },
   {
     code: "STU002", name: "Ayesha Khan", grade: "Grade 9", section: "B", rollNo: "2024-092",
-    dob: new Date("2009-07-22"), gender: "Female", bloodGroup: "A+", phone: "0300-9876543",
+    dob: new Date("2009-07-22"), gender: "Female", bloodGroup: "A+", phone: "03009876543",
     address: "House 5, F-7/2, Islamabad", parentCode: "PAR002",
     scores: [
       { subject: "Mathematics",  current: 88, previous: 84 },
@@ -180,7 +180,7 @@ const STUDENTS = [
   },
   {
     code: "STU003", name: "Bilal Raza", grade: "Grade 8", section: "A", rollNo: "2024-083",
-    dob: new Date("2010-01-09"), gender: "Male", bloodGroup: "O+", phone: "0300-2223344",
+    dob: new Date("2010-01-09"), gender: "Male", bloodGroup: "O+", phone: "03002223344",
     address: "House 88, Model Town, Lahore", parentCode: "PAR003",
     scores: [
       { subject: "Mathematics",  current: 64, previous: 71 },
@@ -201,7 +201,7 @@ const STUDENTS = [
   },
   {
     code: "STU004", name: "Hania Malik", grade: "Grade 8", section: "A", rollNo: "2024-084",
-    dob: new Date("2010-06-30"), gender: "Female", bloodGroup: "AB+", phone: "0300-4445566",
+    dob: new Date("2010-06-30"), gender: "Female", bloodGroup: "AB+", phone: "03004445566",
     address: "House 21, Gulberg III, Lahore", parentCode: "PAR003",
     scores: [
       { subject: "Mathematics",  current: 96, previous: 92 },
@@ -220,9 +220,9 @@ const STUDENTS = [
 ];
 
 const PARENTS = [
-  { code: "PAR001", name: "Sara Ahmed", email: "sara@gmail.com", phone: "0321-9876543", relation: "Mother", occupation: "Doctor" },
-  { code: "PAR002", name: "Ali Khan",   email: "ali@gmail.com",  phone: "0321-8765432", relation: "Father", occupation: "Engineer" },
-  { code: "PAR003", name: "Nida Raza",  email: "nida@gmail.com", phone: "0321-7654321", relation: "Mother", occupation: "Banker" },
+  { code: "PAR001", name: "Sara Ahmed", email: "sara@gmail.com", phone: "03219876543", relation: "Mother", occupation: "Doctor" },
+  { code: "PAR002", name: "Ali Khan",   email: "ali@gmail.com",  phone: "03218765432", relation: "Father", occupation: "Engineer" },
+  { code: "PAR003", name: "Nida Raza",  email: "nida@gmail.com", phone: "03217654321", relation: "Mother", occupation: "Banker" },
 ];
 
 const TIMETABLE = {
@@ -331,21 +331,21 @@ async function main() {
 
   const bhsAdmin = await prisma.user.create({
     data: {
-      name: "Dr. Imran Sheikh", email: "admin@bhs.edu", phone: "0300-1010101",
+      name: "Dr. Imran Sheikh", email: "admin@bhs.edu", phone: "03001010101",
       passwordHash: hash("admin123"), role: "ADMIN", instituteId: bhs.id,
     },
   });
 
   await prisma.user.create({
     data: {
-      name: "Ms. Rabia Noor", email: "admin@lacas.edu", phone: "0300-2020202",
+      name: "Ms. Rabia Noor", email: "admin@lacas.edu", phone: "03002020202",
       passwordHash: hash("admin123"), role: "ADMIN", instituteId: lacas.id,
     },
   });
 
   await prisma.user.create({
     data: {
-      name: "Mr. Kamran Butt", email: "admin@citys.edu", phone: "0300-3030303",
+      name: "Mr. Kamran Butt", email: "admin@citys.edu", phone: "03003030303",
       passwordHash: hash("admin123"), role: "ADMIN", instituteId: tcs.id,
     },
   });
@@ -656,4 +656,6 @@ main()
   .finally(async () => {
     await prisma.$disconnect();
   });
+
+
 

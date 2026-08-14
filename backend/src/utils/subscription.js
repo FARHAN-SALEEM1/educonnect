@@ -53,6 +53,52 @@ export const assertSeatsAvailable = (institute, currentStudents, adding = 1) => 
 export const isInGracePeriod = (institute) =>
   Boolean(institute?.cancelAtPeriodEnd && institute?.subscriptionEndsAt && institute.subscriptionEndsAt > new Date());
 
+/**
+ * A cancelled subscription whose paid period has now passed.
+ *
+ * Computed live rather than trusting `status`, so expiry takes effect the
+ * moment the date passes — not whenever the background sweep next runs.
+ * The sweep exists to keep the stored status honest for listings/reports.
+ */
+export const hasExpired = (institute) =>
+  Boolean(
+    institute?.cancelAtPeriodEnd &&
+      institute?.subscriptionEndsAt &&
+      institute.subscriptionEndsAt <= new Date()
+  );
+
+/**
+ * The single source of truth for "can this institute be used right now".
+ * Returns null when access is fine, or a { status, message } to block with.
+ */
+export const accessBlock = (institute) => {
+  if (!institute) return { status: "MISSING", message: "Your institute no longer exists" };
+
+  if (institute.status === "SUSPENDED") {
+    return {
+      status: "SUSPENDED",
+      message: "Your institute account has been suspended. Please contact the administrator.",
+    };
+  }
+  if (institute.status === "CANCELLED") {
+    return {
+      status: "CANCELLED",
+      message: "Your institute account has been closed. Please contact the administrator.",
+    };
+  }
+  if (institute.status === "EXPIRED" || hasExpired(institute)) {
+    return {
+      status: "EXPIRED",
+      message:
+        "Your subscription has expired. Please renew it from the admin portal, or contact the administrator.",
+    };
+  }
+  return null;
+};
+
+/** Statuses a super admin may still act on — nothing is hidden from them. */
+export const SUBSCRIPTION_STATUSES = ["PENDING", "ACTIVE", "SUSPENDED", "EXPIRED", "CANCELLED"];
+
 /** Last moment of the current calendar month — when an end-of-period cancel lands. */
 export const endOfCurrentPeriod = (from = new Date()) =>
   new Date(Date.UTC(from.getUTCFullYear(), from.getUTCMonth() + 1, 0, 23, 59, 59, 999));

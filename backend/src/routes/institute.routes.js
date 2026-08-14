@@ -23,6 +23,19 @@ router.use(authenticate);
 // so an admin can only ever change their own subscription.
 router.get("/me/subscription", authorize("ADMIN", "SUPERADMIN"), requireInstitute, ctrl.mySubscription);
 
+router.get(
+  "/me/notifications",
+  authorize("ADMIN", "SUPERADMIN"),
+  requireInstitute,
+  ctrl.getNotificationSettings
+);
+router.patch(
+  "/me/notifications",
+  authorize("ADMIN", "SUPERADMIN"),
+  requireInstitute,
+  ctrl.updateNotificationSettings
+);
+
 router.post(
   "/me/subscription/plan",
   authorize("ADMIN", "SUPERADMIN"),

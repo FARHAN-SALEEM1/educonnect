@@ -6,6 +6,7 @@ import { audit } from "../utils/audit.js";
 import { periodLabel } from "../utils/academics.js";
 import { studentScopeWhere } from "../utils/access.js";
 import { sendFeeReminder } from "../services/email.service.js";
+import { notificationEnabled } from "../utils/notifications.js";
 
 const netAmount = (invoice) => invoice.amount - invoice.discount + invoice.lateFee;
 
@@ -260,6 +261,18 @@ export const markOverdue = asyncHandler(async (req, res) => {
  */
 export const sendFeeReminders = asyncHandler(async (req, res) => {
   const { period, includeOverdueOnly = false } = req.body ?? {};
+
+  // The "Fee reminders to parents" toggle is enforced here, not just in the
+  // UI — turning it off genuinely stops reminders, including via direct API.
+  const institute = await prisma.institute.findUnique({
+    where: { id: req.instituteId },
+    select: { notificationSettings: true },
+  });
+  if (!notificationEnabled(institute, "feeReminders")) {
+    throw ApiError.badRequest(
+      "Fee reminders are turned off for this institute. Enable them in Settings → Notifications first."
+    );
+  }
 
   const invoices = await prisma.feeInvoice.findMany({
     where: {
