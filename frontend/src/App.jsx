@@ -4,6 +4,9 @@ import { tokens, restoreSession, setSessionExpiredHandler } from "./api/client.j
 import { useDb } from "./hooks/useDb.js";
 import { toLegacyUser } from "./adapters/legacy.js";
 import { downloadCsv, downloadJson, stamped } from "./utils/download.js";
+import {
+  emailError, phoneError, nameError, passwordError, positiveIntError,
+} from "./utils/validate.js";
 
 // ═══════════════════════════════════════════════════════════════════
 // DESIGN SYSTEM
@@ -28,6 +31,71 @@ const css=`
   ::-webkit-scrollbar-thumb{background:#E2E8F0;border-radius:99px}
   input,select,textarea{font-family:inherit;}
   button{font-family:inherit;cursor:pointer;}
+
+  /* ── Responsive ──────────────────────────────────────────────────
+     Every layout in this app is set with inline styles, which beat normal
+     stylesheet rules. These attribute selectors match the inline
+     grid-template-columns React writes out, and !important is what lets a
+     breakpoint override it. Not elegant, but it fixes the real problem
+     without rewriting ~3,000 lines of presentation code.
+  */
+  html,body{max-width:100%;overflow-x:hidden;}
+
+  /* Tables become their own horizontal scroll region rather than stretching
+     the page. display:block is what makes overflow-x apply to a table. */
+  @media (max-width:768px){
+    table{display:block;overflow-x:auto;white-space:nowrap;max-width:100%;}
+    thead,tbody{width:max-content;min-width:100%;}
+  }
+
+  /* 1024px laptops still overflowed with a fixed side column, so the
+     asymmetric two-pane layouts collapse here rather than at 900px. */
+  @media (max-width:1100px){
+    /* 4-up KPI rows become 2-up before collapsing entirely. */
+    [style*="repeat(4,1fr)"],[style*="repeat(4, 1fr)"]{grid-template-columns:repeat(2,1fr)!important;}
+    [style*="repeat(6,1fr)"],[style*="repeat(6, 1fr)"]{grid-template-columns:repeat(3,1fr)!important;}
+
+    /* Content + fixed side rail (dashboards, fees, messages) stacks. */
+    [style*="280px 1fr"],[style*="1fr 280px"],
+    [style*="300px 1fr"],[style*="1fr 300px"],
+    [style*="320px 1fr"],[style*="1fr 320px"],
+    [style*="340px 1fr"],[style*="1fr 340px"],
+    [style*="360px 1fr"],[style*="1fr 360px"],
+    [style*="2fr 1fr"],[style*="1fr 2fr"]{grid-template-columns:1fr!important;}
+  }
+
+  @media (max-width:900px){
+    [style*="grid-template-columns: 1fr 1fr"],
+    [style*="grid-template-columns:1fr 1fr"]{grid-template-columns:1fr!important;}
+    [style*="repeat(3,1fr)"],[style*="repeat(3, 1fr)"]{grid-template-columns:repeat(2,1fr)!important;}
+  }
+
+  @media (max-width:640px){
+    /* Everything single-column on a phone. */
+    [style*="grid-template-columns"]{grid-template-columns:1fr!important;}
+    /* Fixed-height panes (message inbox) would trap content on mobile. */
+    [style*="height:520px"],[style*="height: 520px"]{height:auto!important;}
+    main{padding:18px 14px!important;}
+    /* Long headings shouldn't force the page wide. */
+    h1{font-size:26px!important;line-height:1.2!important;}
+    /* Modals need room to breathe. */
+    [role="dialog"],[data-modal]{width:calc(100vw - 24px)!important;max-width:none!important;}
+  }
+
+  /* Anything genuinely wider than the screen scrolls itself instead of
+     stretching the document. */
+  .ec-scroll-x{overflow-x:auto;-webkit-overflow-scrolling:touch;}
+
+  /* Landing navbar. The 64px side padding is most of a phone's width, so it
+     tightens up and the row is allowed to wrap onto a second line rather than
+     pushing its buttons off the edge. */
+  @media (max-width:820px){
+    .ec-topnav{padding:12px 18px!important;gap:12px!important;}
+  }
+  @media (max-width:520px){
+    .ec-topnav{padding:12px 14px!important;gap:10px!important;justify-content:center;}
+    .ec-topnav > div:first-child{margin-right:0!important;width:100%;}
+  }
 `;
 
 // ═══════════════════════════════════════════════════════════════════
@@ -51,6 +119,15 @@ const PLANS = [
 // HELPERS & ATOMS
 // ═══════════════════════════════════════════════════════════════════
 const ini = n => n.split(" ").map(w=>w[0]).join("").slice(0,2).toUpperCase();
+/**
+ * Time-appropriate greeting. The dashboards said "Good morning" at every hour
+ * of the day, which reads as broken to anyone using the app after lunch.
+ * Boundaries follow ordinary usage: morning to 12, afternoon to 17, then evening.
+ */
+const greeting = (d = new Date()) => {
+  const h = d.getHours();
+  return h < 12 ? "Good morning" : h < 17 ? "Good afternoon" : "Good evening";
+};
 const pct = (a,b) => Math.round(a/b*100);
 const gc  = g => g==="A+"||g==="A"?T.success:g==="A−"||g==="B+"?T.warning:T.danger;
 const sc  = n => ({Mathematics:T.purple,"Computer Sc.":T.forest,Urdu:T.green,English:T.blue,Physics:T.gold,Chemistry:T.clay,Biology:T.teal,"Pak. Studies":T.pink}[n]||T.muted);
@@ -65,12 +142,18 @@ const Bdg=({label,color,bg,style={}})=>(
 const Crd=({children,style={},onClick})=>(
   <div onClick={onClick} style={{background:T.card,borderRadius:18,border:`1px solid ${T.border}`,boxShadow:"0 2px 12px rgba(15,23,42,.06)",...style,cursor:onClick?"pointer":undefined}}>{children}</div>
 );
-const Inp=({label,type="text",value,onChange,placeholder,style={}})=>(
+/**
+ * `style` dresses the wrapper (grid placement, spacing); every other extra prop
+ * — maxLength, min, max, step — is forwarded to the input. They used to be
+ * swallowed here, so `maxLength={11}` on the phone fields and `min="1"` on the
+ * numeric ones were silently doing nothing at all.
+ */
+const Inp=({label,type="text",value,onChange,placeholder,style={},...rest})=>(
   <div style={{marginBottom:14,...style}}>
     {label&&<div style={{fontSize:11,fontWeight:700,color:T.muted,marginBottom:5,textTransform:"uppercase",letterSpacing:".6px"}}>{label}</div>}
     {/* Controlled only when a handler is supplied — passing `value` without
         `onChange` would freeze the field and make it silently read-only. */}
-    <input type={type} {...(onChange?{value:value??"",onChange}:{defaultValue:value??""})} placeholder={placeholder}
+    <input type={type} {...(onChange?{value:value??"",onChange}:{defaultValue:value??""})} placeholder={placeholder} {...rest}
       style={{width:"100%",padding:"10px 14px",borderRadius:10,border:`1.5px solid ${T.border}`,fontSize:13,color:T.ink,background:T.paper,outline:"none",transition:"border-color .15s"}}
       onFocus={e=>e.target.style.borderColor=T.forest} onBlur={e=>e.target.style.borderColor=T.border}/>
   </div>
@@ -154,7 +237,7 @@ const Toggle=({on})=>(
 // ═══════════════════════════════════════════════════════════════════
 // SIDEBAR
 // ═══════════════════════════════════════════════════════════════════
-const Sidebar=({nav,tab,setTab,user,inst,collapsed,setCollapsed,onLogout})=>{
+const Sidebar=({nav,tab,setTab,user,inst,collapsed,setCollapsed,onLogout,lockCollapsed=false})=>{
   const ic=inst||{name:"EduConnect HQ",logo:"✦",color:T.ink};
   return(
     <aside style={{width:collapsed?64:236,background:T.card,borderRight:`1px solid ${T.border}`,display:"flex",flexDirection:"column",flexShrink:0,transition:"width .25s cubic-bezier(.4,0,.2,1)",overflow:"hidden",position:"sticky",top:0,height:"100vh",zIndex:50}}>
@@ -165,7 +248,9 @@ const Sidebar=({nav,tab,setTab,user,inst,collapsed,setCollapsed,onLogout})=>{
           <div style={{fontSize:13,fontWeight:800,color:T.ink,fontFamily:"Georgia,serif",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{ic.name}</div>
           <div style={{fontSize:9,color:T.muted,fontWeight:700,letterSpacing:"1px",textTransform:"uppercase"}}>{user.role==="superadmin"?"Platform Admin":user.role==="admin"?"Admin Portal":user.role==="teacher"?"Teacher Portal":"Parent Portal"}</div>
         </div>}
-        <div onClick={()=>setCollapsed(c=>!c)} style={{cursor:"pointer",color:T.muted,fontSize:20,flexShrink:0,lineHeight:1,marginLeft:"auto",userSelect:"none"}}>{collapsed?"›":"‹"}</div>
+        {/* Hidden on narrow screens, where the sidebar is locked to icons —
+            a toggle that can't change anything would be a dead control. */}
+        {!lockCollapsed&&<div onClick={()=>setCollapsed(c=>!c)} style={{cursor:"pointer",color:T.muted,fontSize:20,flexShrink:0,lineHeight:1,marginLeft:"auto",userSelect:"none"}}>{collapsed?"›":"‹"}</div>}
       </div>
       {/* User pill */}
       {!collapsed&&<div style={{margin:"12px 10px",background:G(ic.color,T.green),borderRadius:13,padding:"14px 16px",position:"relative",overflow:"hidden"}}>
@@ -201,19 +286,131 @@ const Sidebar=({nav,tab,setTab,user,inst,collapsed,setCollapsed,onLogout})=>{
   );
 };
 
-const Shell=({nav,tab,setTab,user,inst,collapsed,setCollapsed,onLogout,children})=>(
-  <div style={{display:"flex",minHeight:"100vh",background:T.bg}}>
-    <style>{css}</style>
-    <Sidebar nav={nav} tab={tab} setTab={setTab} user={user} inst={inst} collapsed={collapsed} setCollapsed={setCollapsed} onLogout={onLogout}/>
-    <main style={{flex:1,padding:"28px 34px",overflowY:"auto",minWidth:0,animation:"fadeUp .38s ease"}}>{children}</main>
-  </div>
-);
+/**
+ * Tracks a media query. Used to collapse the sidebar on narrow screens —
+ * CSS alone can't do it, because the sidebar hides its labels based on the
+ * `collapsed` prop rather than on width.
+ */
+const useMediaQuery=(query)=>{
+  const[matches,setMatches]=useState(()=>typeof window!=="undefined"&&window.matchMedia(query).matches);
+  useEffect(()=>{
+    const mq=window.matchMedia(query);
+    const onChange=e=>setMatches(e.matches);
+    mq.addEventListener("change",onChange);
+    setMatches(mq.matches);
+    return()=>mq.removeEventListener("change",onChange);
+  },[query]);
+  return matches;
+};
+
+/**
+ * Keeps the active tab in the URL hash, so the browser's own Back and Forward
+ * buttons move between screens, a refresh stays where you were, and a tab can
+ * be linked to.
+ *
+ * The app has no router — each portal drives its screens from a single `tab`
+ * state value. Rather than restructure four portals around react-router, this
+ * syncs that one value both ways: hash → state on load and on popstate,
+ * state → hash on navigation. An unrecognised hash falls back to the portal's
+ * default, which is also what happens when you sign in as a different role
+ * while an old hash is still in the address bar.
+ */
+const useHashTab=(fallback,valid)=>{
+  const rawHash=()=>window.location.hash.replace(/^#\/?/,"").split("?")[0];
+  const read=()=>{
+    const id=rawHash();
+    return valid.includes(id)?id:fallback;
+  };
+
+  const[tab,setTabState]=useState(read);
+
+  // Normalise whatever is in the bar on arrival, so the first Back press has a
+  // real entry to return to instead of leaving the app.
+  useEffect(()=>{
+    window.history.replaceState({tab},"",`#/${tab}`);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  },[]);
+
+  useEffect(()=>{
+    // Resolve the hash, and rewrite it when it named a screen this portal
+    // doesn't have — otherwise the address bar would keep advertising a tab
+    // the user isn't actually looking at.
+    const sync=()=>{
+      const next=read();
+      if(rawHash()!==next)window.history.replaceState({tab:next},"",`#/${next}`);
+      setTabState(next);
+    };
+    window.addEventListener("popstate",sync);
+    window.addEventListener("hashchange",sync);
+    return()=>{
+      window.removeEventListener("popstate",sync);
+      window.removeEventListener("hashchange",sync);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  },[valid.join(",")]);
+
+  const setTab=(next)=>{
+    if(next===tab)return;
+    window.history.pushState({tab:next},"",`#/${next}`);
+    setTabState(next);
+  };
+
+  return[tab,setTab];
+};
+
+const Shell=({nav,tab,setTab,user,inst,collapsed,setCollapsed,onLogout,children})=>{
+  const narrow=useMediaQuery("(max-width: 900px)");
+  // Below 900px the sidebar is always icons-only, so content keeps its room.
+  const isCollapsed=collapsed||narrow;
+
+  return(
+    <div style={{display:"flex",minHeight:"100vh",background:T.bg,maxWidth:"100vw",overflowX:"hidden"}}>
+      <style>{css}</style>
+      <Sidebar nav={nav} tab={tab} setTab={setTab} user={user} inst={inst}
+        collapsed={isCollapsed} setCollapsed={narrow?()=>{}:setCollapsed} onLogout={onLogout} lockCollapsed={narrow}/>
+      <main style={{flex:1,padding:"28px 34px",overflowY:"auto",minWidth:0,maxWidth:"100%",animation:"fadeUp .38s ease"}}>{children}</main>
+    </div>
+  );
+};
 
 // ═══════════════════════════════════════════════════════════════════
 // LANDING PAGE
 // ═══════════════════════════════════════════════════════════════════
-const Landing=({onLogin,onSignup})=>{
+/**
+ * Demo logins offered on the landing page. These are the seeded accounts from
+ * backend/prisma/seed.js — if that changes, change this too.
+ */
+const DEMO_ACCOUNTS=[
+  {role:"🔑 Super Admin",     email:"sa@educonnect.io", pass:"super123",  desc:"Full platform control — all institutes, revenue, users"},
+  {role:"🏫 Institute Admin", email:"admin@bhs.edu",    pass:"admin123",  desc:"Manage Beaconhouse — students, teachers, parents, fees"},
+  {role:"📖 Teacher",         email:"hassan@bhs.edu",   pass:"teach123",  desc:"Mr. Hassan — Mathematics classes, gradebook, attendance"},
+  {role:"👨‍👩‍👦 Parent",        email:"sara@gmail.com",   pass:"parent123", desc:"Sara Ahmed — Zain's grades, attendance, messages, fees"},
+];
+
+const Landing=({onLogin,onSignup,onDemoLogin})=>{
   const [demoOpen,setDemoOpen]=useState(false);
+  const [demoBusy,setDemoBusy]=useState("");
+  const [demoErr,setDemoErr]=useState("");
+
+  /**
+   * One-click demo sign-in. This previously only displayed credentials for the
+   * visitor to copy, so the button led to a dead end. It now authenticates
+   * against the real API — same endpoint, same session, no shortcuts.
+   */
+  const tryDemo=async(email,pass)=>{
+    setDemoBusy(email);setDemoErr("");
+    try{
+      const user=await api.auth.login(email,pass);
+      onDemoLogin(toLegacyUser(user));
+    }catch(e){
+      setDemoErr(
+        e.status===401
+          ? "The demo accounts aren't in this database yet. Run `npm run db:seed` in the backend, then try again."
+          : e.message||"Couldn't sign in to the demo account."
+      );
+      setDemoBusy("");
+    }
+  };
   const feats=[
     {ic:"◈",t:"Role-Based Portals",d:"Separate, tailored dashboards for Super Admin, Institute Admin, Teachers, and Parents — every role sees exactly what they need.",c:T.purple},
     {ic:"✦",t:"AI-Powered Insights",d:"Predict student performance, detect at-risk students early, and generate personalized study recommendations automatically.",c:T.gold},
@@ -226,12 +423,23 @@ const Landing=({onLogin,onSignup})=>{
     <div style={{minHeight:"100vh",background:T.bg,fontFamily:"-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif"}}>
       <style>{css}</style>
       {/* Navbar */}
-      <nav style={{background:T.card,borderBottom:`1px solid ${T.border}`,padding:"14px 64px",display:"flex",alignItems:"center",gap:20,position:"sticky",top:0,zIndex:100,boxShadow:"0 1px 12px rgba(0,0,0,.04)"}}>
+      {/* flexWrap + the .ec-topnav breakpoint keep the two CTAs on screen: at
+          390px the 64px side padding left only 262px for the logo, the links
+          and both buttons, so "Sign In" was half cut off and "Get Started
+          Free" sat entirely outside the viewport — invisible and unclickable,
+          hidden rather than revealed by the page's overflow-x:hidden. */}
+      <nav className="ec-topnav" style={{background:T.card,borderBottom:`1px solid ${T.border}`,padding:"14px 64px",display:"flex",alignItems:"center",gap:20,flexWrap:"wrap",position:"sticky",top:0,zIndex:100,boxShadow:"0 1px 12px rgba(0,0,0,.04)"}}>
         <div style={{display:"flex",alignItems:"center",gap:10,marginRight:"auto"}}>
           <div style={{width:36,height:36,borderRadius:10,background:T.forest,display:"flex",alignItems:"center",justifyContent:"center",boxShadow:`0 4px 12px ${T.forest}55`}}><span style={{color:"#fff",fontSize:16}}>✦</span></div>
           <div><div style={{fontSize:16,fontWeight:800,color:T.ink,fontFamily:"Georgia,serif"}}>EduConnect</div><div style={{fontSize:9,color:T.muted,fontWeight:700,letterSpacing:"1.2px",textTransform:"uppercase"}}>SaaS Platform</div></div>
         </div>
-        {["Features","Pricing","About","Contact"].map(l=><span key={l} style={{fontSize:13,color:T.muted,cursor:"pointer",fontWeight:500,transition:"color .15s"}}>{l}</span>)}
+        {/* Only the two links that have somewhere to go. "About" and "Contact"
+            were here too, styled as clickable but bound to nothing — there are
+            no such sections or pages on this site. */}
+        {[["Features","ec-features"],["Pricing","ec-pricing"]].map(([l,id])=>(
+          <span key={l} onClick={()=>document.getElementById(id)?.scrollIntoView({behavior:"smooth"})}
+            style={{fontSize:13,color:T.muted,cursor:"pointer",fontWeight:500,transition:"color .15s"}}>{l}</span>
+        ))}
         <Btn onClick={onLogin} out color={T.forest} style={{padding:"8px 18px",marginLeft:6}}>Sign In</Btn>
         <Btn onClick={onSignup} style={{padding:"8px 20px",background:T.forest}}>Get Started Free</Btn>
       </nav>
@@ -248,7 +456,7 @@ const Landing=({onLogin,onSignup})=>{
         <p style={{fontSize:18,color:"rgba(255,255,255,.6)",maxWidth:580,margin:"0 auto 40px",lineHeight:1.8}}>AI-powered analytics, real-time parent communication, attendance tracking, fee management — all in one beautifully designed platform.</p>
         <div style={{display:"flex",gap:14,justifyContent:"center",flexWrap:"wrap",marginBottom:64}}>
           <Btn onClick={onSignup} color={T.mint} text={T.forest} style={{padding:"15px 36px",fontSize:15,fontWeight:700,borderRadius:12,boxShadow:`0 8px 32px ${T.mint}44`}}>Start 14-Day Free Trial →</Btn>
-          <Btn onClick={()=>setDemoOpen(true)} out color="rgba(255,255,255,.5)" style={{padding:"15px 36px",fontSize:15,color:"rgba(255,255,255,.8)",borderRadius:12}}>View Demo Portals</Btn>
+          <Btn onClick={()=>setDemoOpen(true)} out color="rgba(255,255,255,.5)" style={{padding:"15px 36px",fontSize:15,color:"rgba(255,255,255,.8)",borderRadius:12}}>Try Demo Account</Btn>
         </div>
         <div style={{display:"flex",gap:52,justifyContent:"center",flexWrap:"wrap"}}>
           {[["500+","Schools"],["2.4M+","Students"],["99.9%","Uptime"],["4.9★","Rating"]].map(([v,l])=>(
@@ -260,7 +468,7 @@ const Landing=({onLogin,onSignup})=>{
         </div>
       </div>
       {/* Features */}
-      <div style={{padding:"88px 64px",maxWidth:1280,margin:"0 auto"}}>
+      <div id="ec-features" style={{padding:"88px 64px",maxWidth:1280,margin:"0 auto"}}>
         <div style={{textAlign:"center",marginBottom:52}}>
           <div style={{fontSize:11,color:T.muted,fontWeight:700,letterSpacing:"2px",textTransform:"uppercase",marginBottom:12}}>Why EduConnect</div>
           <h2 style={{fontFamily:"Georgia,serif",fontSize:42,fontWeight:800,color:T.ink}}>Everything your school needs</h2>
@@ -279,7 +487,7 @@ const Landing=({onLogin,onSignup})=>{
         </div>
       </div>
       {/* Pricing */}
-      <div style={{background:T.paper,padding:"88px 64px"}}>
+      <div id="ec-pricing" style={{background:T.paper,padding:"88px 64px"}}>
         <div style={{textAlign:"center",marginBottom:52}}>
           <div style={{fontSize:11,color:T.muted,fontWeight:700,letterSpacing:"2px",textTransform:"uppercase",marginBottom:12}}>Pricing Plans</div>
           <h2 style={{fontFamily:"Georgia,serif",fontSize:42,fontWeight:800,color:T.ink}}>Simple, transparent pricing</h2>
@@ -316,19 +524,30 @@ const Landing=({onLogin,onSignup})=>{
           <span style={{fontSize:14,fontWeight:800,color:"#fff",fontFamily:"Georgia,serif"}}>EduConnect</span>
         </div>
         <span style={{fontSize:12,color:"rgba(255,255,255,.3)"}}>© 2026 EduConnect. All rights reserved. Made with ❤️ in Pakistan 🇵🇰</span>
-        <div style={{display:"flex",gap:20}}>{["Privacy","Terms","Support"].map(l=><span key={l} style={{fontSize:12,color:"rgba(255,255,255,.35)",cursor:"pointer"}}>{l}</span>)}</div>
+        {/* Was "Privacy · Terms · Support" rendered as links to pages that
+            don't exist. Shown as plain text until there is something behind them. */}
+        <span style={{fontSize:12,color:"rgba(255,255,255,.3)"}}>Final-year project · not a commercial service</span>
       </div>
-      {demoOpen&&<Modal title="Live Demo Credentials" onClose={()=>setDemoOpen(false)} width={460}>
-        <p style={{fontSize:13,color:T.muted,marginBottom:18,lineHeight:1.7}}>Use these to explore all four portals. Each shows a different role and permission level.</p>
-        {[["🔑 Super Admin","sa@educonnect.io","super123","Full platform control — all institutes, revenue, users"],["🏫 Institute Admin","admin@bhs.edu","admin123","Manage Beaconhouse — students, teachers, parents, fees"],["📖 Teacher","hassan@bhs.edu","teach123","Mr. Hassan — Mathematics classes, gradebook, attendance"],["👨‍👩‍👦 Parent","sara@gmail.com","parent123","Sara Ahmed — Zain's grades, attendance, messages, fees"]].map(([role,email,pass,desc])=>(
+      {demoOpen&&<Modal title="Try a Demo Account" onClose={()=>{setDemoOpen(false);setDemoErr("");}} width={470}>
+        <p style={{fontSize:13,color:T.muted,marginBottom:18,lineHeight:1.7}}>
+          Pick a role to sign in instantly — no typing. Each portal shows a different permission level against the same live data.
+        </p>
+        {DEMO_ACCOUNTS.map(({role,email,pass,desc})=>(
           <div key={role} style={{padding:"14px",background:T.paper,borderRadius:12,marginBottom:10,border:`1px solid ${T.border}`}}>
-            <div style={{fontSize:13,fontWeight:700,color:T.forest,marginBottom:4}}>{role}</div>
-            <div style={{fontSize:13,color:T.ink,marginBottom:2}}>Email: <b>{email}</b></div>
-            <div style={{fontSize:13,color:T.ink,marginBottom:4}}>Password: <b>{pass}</b></div>
-            <div style={{fontSize:11,color:T.muted}}>{desc}</div>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:12}}>
+              <div style={{minWidth:0}}>
+                <div style={{fontSize:13,fontWeight:700,color:T.forest,marginBottom:3}}>{role}</div>
+                <div style={{fontSize:11.5,color:T.muted,lineHeight:1.5}}>{desc}</div>
+                <div style={{fontSize:11,color:T.muted,marginTop:5,opacity:.8}}>{email} · {pass}</div>
+              </div>
+              <Btn onClick={()=>tryDemo(email,pass)} style={{padding:"9px 15px",fontSize:12,flexShrink:0}} disabled={Boolean(demoBusy)}>
+                {demoBusy===email?"Signing in…":"Sign in"}
+              </Btn>
+            </div>
           </div>
         ))}
-        <Btn onClick={onLogin} full style={{marginTop:6}}>→ Go to Login</Btn>
+        {demoErr&&<div style={{background:`${T.danger}12`,color:T.danger,borderRadius:10,padding:"10px 14px",fontSize:12.5,marginTop:4,marginBottom:10,border:`1px solid ${T.danger}30`,lineHeight:1.6}}>{demoErr}</div>}
+        <Btn onClick={onLogin} out color={T.muted} full style={{marginTop:6}}>Or sign in manually →</Btn>
       </Modal>}
     </div>
   );
@@ -394,28 +613,25 @@ const Signup=({onBack,onLogin})=>{
   const[err,setErr]=useState("");
 
   /**
-   * Client-side checks mirror the Zod rules on the server. The server is still
-   * the authority — this only gives faster, field-level feedback.
+   * Shared with the server rules in utils/validate.js. The API re-validates
+   * everything — this is for immediate, specific feedback, and errors only
+   * appear once a field has been touched.
    */
-  const emailOk=v=>/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(String(v||"").trim());
-  // Pakistani formats plus international: digits, spaces, dashes, optional +.
-  const phoneOk=v=>{
-    const digits=String(v||"").replace(/[^\d]/g,"");
-    return /^[+]?[\d\s()-]{7,20}$/.test(String(v||"").trim())&&digits.length>=7&&digits.length<=15;
-  };
-  const positiveIntOk=v=>/^\d+$/.test(String(v||"").trim())&&Number(v)>0;
+  const studentsErr   = f.students   ? positiveIntError(f.students,"Student limit") : "";
+  const emailErr      = f.email      ? emailError(f.email,{label:"Official email"}) : "";
+  const phoneErr      = f.phone      ? phoneError(f.phone,{label:"Contact phone"}) : "";
+  const adminEmailErr = f.adminEmail ? emailError(f.adminEmail,{label:"Admin email"}) : "";
+  const adminPhoneErr = f.adminPhone ? phoneError(f.adminPhone,{label:"Admin phone"}) : "";
+  const passErr       = f.adminPass  ? passwordError(f.adminPass) : "";
+  const nameErr       = f.name       ? nameError(f.name,"School name") : "";
 
-  const studentsErr=f.students&&!positiveIntOk(f.students)
-    ? "Student limit must be a whole number greater than 0."
-    : "";
-  const emailErr=f.email&&!emailOk(f.email)?"Enter a valid email address.":"";
-  const phoneErr=f.phone&&!phoneOk(f.phone)?"Enter a valid phone number (7–15 digits).":"";
-  const adminEmailErr=f.adminEmail&&!emailOk(f.adminEmail)?"Enter a valid email address.":"";
-  const adminPhoneErr=f.adminPhone&&!phoneOk(f.adminPhone)?"Enter a valid phone number.":"";
-  const passErr=f.adminPass&&f.adminPass.length<8?"Password must be at least 8 characters.":"";
+  const step1Ok =
+    !nameError(f.name,"School name") && f.city.trim() &&
+    !emailError(f.email) && !phoneError(f.phone) && !positiveIntError(f.students,"Student limit");
 
-  const step1Ok=f.name.trim()&&f.city.trim()&&emailOk(f.email)&&!studentsErr&&!phoneErr;
-  const step3Ok=f.adminName.trim()&&emailOk(f.adminEmail)&&f.adminPass.length>=8&&!adminPhoneErr;
+  const step3Ok =
+    !nameError(f.adminName,"Admin name") && !emailError(f.adminEmail) &&
+    !passwordError(f.adminPass) && !phoneError(f.adminPhone,{required:false});
 
   const register=async()=>{
     setSubmitting(true);setErr("");
@@ -481,7 +697,7 @@ const Signup=({onBack,onLogin})=>{
               <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
                 <Inp label="School / Institute Name*" value={f.name} onChange={e=>set("name",e.target.value)} placeholder="e.g. Beaconhouse School" style={{gridColumn:"1/-1"}}/>
                 <Inp label="City*" value={f.city} onChange={e=>set("city",e.target.value)} placeholder="e.g. Lahore"/>
-                <Inp label="Contact Phone*" value={f.phone} onChange={e=>set("phone",e.target.value)} placeholder="042-000-000"/>
+                <Inp label="Contact Phone*" value={f.phone} onChange={e=>set("phone",e.target.value)} placeholder="03001234567" maxLength={11}/>
                 {phoneErr&&<div style={{gridColumn:"1/-1",fontSize:11.5,color:T.danger,marginTop:-8,marginBottom:10}}>{phoneErr}</div>}
                 <Inp label="Official Email*" value={f.email} onChange={e=>set("email",e.target.value)} placeholder="info@school.edu" type="email" style={{gridColumn:"1/-1"}}/>
                 {emailErr&&<div style={{gridColumn:"1/-1",fontSize:11.5,color:T.danger,marginTop:-8,marginBottom:10}}>{emailErr}</div>}
@@ -537,7 +753,7 @@ const Signup=({onBack,onLogin})=>{
               <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
                 <Inp label="Admin Full Name*" value={f.adminName} onChange={e=>set("adminName",e.target.value)} placeholder="Dr. Imran Sheikh" style={{gridColumn:"1/-1"}}/>
                 <Inp label="Admin Email*" value={f.adminEmail} onChange={e=>set("adminEmail",e.target.value)} placeholder="admin@school.edu" type="email"/>
-                <Inp label="Admin Phone" value={f.adminPhone} onChange={e=>set("adminPhone",e.target.value)} placeholder="0300-0000000"/>
+                <Inp label="Admin Phone" value={f.adminPhone} onChange={e=>set("adminPhone",e.target.value)} placeholder="03001234567" maxLength={11}/>
                 {adminEmailErr&&<div style={{gridColumn:"1/-1",fontSize:11.5,color:T.danger,marginTop:-8,marginBottom:10}}>{adminEmailErr}</div>}
                 {adminPhoneErr&&<div style={{gridColumn:"1/-1",fontSize:11.5,color:T.danger,marginTop:-8,marginBottom:10}}>{adminPhoneErr}</div>}
                 <Inp label="Password*" value={f.adminPass} onChange={e=>set("adminPass",e.target.value)} placeholder="Min 8 characters" type="password" style={{gridColumn:"1/-1"}}/>
@@ -568,8 +784,10 @@ const Signup=({onBack,onLogin})=>{
 // ═══════════════════════════════════════════════════════════════════
 // SUPER ADMIN PORTAL
 // ═══════════════════════════════════════════════════════════════════
+const SUPERADMIN_TABS=["dashboard","institutes","revenue","users","settings"];
+
 const SuperAdmin=({user,db,setDb,onLogout,onReload})=>{
-  const[tab,setTab]=useState("dashboard");
+  const[tab,setTab]=useHashTab("dashboard",SUPERADMIN_TABS);
   const[col,setCol]=useState(false);
   const[modal,setModal]=useState(null);
   const[selInst,setSelInst]=useState(null);
@@ -675,7 +893,7 @@ const SuperAdmin=({user,db,setDb,onLogout,onReload})=>{
         <Inp label="Institute Name*" value={f.name} onChange={e=>s("name",e.target.value)} placeholder="e.g. The City School"/>
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
           <Inp label="City*" value={f.city} onChange={e=>s("city",e.target.value)} placeholder="e.g. Karachi"/>
-          <Inp label="Contact*" value={f.phone} onChange={e=>s("phone",e.target.value)} placeholder="021-000-000"/>
+          <Inp label="Contact*" value={f.phone} onChange={e=>s("phone",e.target.value)} placeholder="03001234567" maxLength={11}/>
         </div>
         <Inp label="Institute Email*" value={f.email} onChange={e=>s("email",e.target.value)} placeholder="admin@school.edu" type="email"/>
         <Sel label="Plan" options={planList.map(p=>({v:p.id,l:`${p.name} — Rs. ${p.price.toLocaleString()}/mo`}))} value={f.planId} onChange={e=>s("planId",e.target.value)}/>
@@ -984,7 +1202,8 @@ const SuperAdmin=({user,db,setDb,onLogout,onReload})=>{
                 <div style={{fontSize:14,fontWeight:700,color:T.ink}}>Registered Institutes</div>
                 <Btn onClick={()=>setModal("addInst")} style={{padding:"8px 16px",fontSize:12}}>+ Add Institute</Btn>
               </div>
-              {insts.map(i=>{const pl=PLANS.find(p=>p.id===i.plan); return(
+              {!insts.length&&<div style={{fontSize:13,color:T.muted,padding:"14px 0"}}>No institutes registered yet.</div>}
+              {insts.map(i=>{const pl=planById(i.plan); return(
                 <div key={i.id} onClick={()=>setSelInst(selInst?.id===i.id?null:i)} style={{display:"flex",alignItems:"center",gap:14,padding:"14px 0",borderBottom:`1px solid ${T.border}`,cursor:"pointer"}}>
                   <div style={{width:44,height:44,borderRadius:13,background:`${pl?.color||T.forest}18`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:22,flexShrink:0}}>{i.logo}</div>
                   <div style={{flex:1}}>
@@ -993,7 +1212,7 @@ const SuperAdmin=({user,db,setDb,onLogout,onReload})=>{
                   </div>
                   <div style={{textAlign:"right"}}>
                     <Bdg label={pl?.name||i.plan} color={pl?.color||T.forest} bg={`${pl?.color||T.forest}18`}/>
-                    <div style={{fontSize:11,color:T.success,marginTop:4,fontWeight:600}}>Rs. {pl?.price.toLocaleString()}/mo</div>
+                    <div style={{fontSize:11,color:T.success,marginTop:4,fontWeight:600}}>Rs. {(pl?.price??0).toLocaleString()}/mo</div>
                   </div>
                 </div>
               );})}
@@ -1001,16 +1220,19 @@ const SuperAdmin=({user,db,setDb,onLogout,onReload})=>{
             <div style={{display:"flex",flexDirection:"column",gap:14}}>
               <Crd style={{padding:"22px"}}>
                 <div style={{fontSize:13,fontWeight:700,color:T.ink,marginBottom:14}}>Plan Distribution</div>
-                {PLANS.map(pl=>{const n=insts.filter(i=>i.plan===pl.id).length; return(
+                {/* planList, not the hard-coded PLANS: a plan the owner edited
+                    or added in Settings would otherwise be missing here. The
+                    guard on insts.length keeps the bar from going NaN. */}
+                {planList.map(pl=>{const n=insts.filter(i=>i.plan===pl.id).length; return(
                   <div key={pl.id} style={{marginBottom:13}}>
-                    <div style={{display:"flex",justifyContent:"space-between",marginBottom:5}}><span style={{fontSize:12,color:T.muted}}>{pl.name}</span><span style={{fontSize:12,fontWeight:700,color:pl.color}}>{n} schools</span></div>
-                    <Bar val={n/insts.length*100} color={pl.color}/>
+                    <div style={{display:"flex",justifyContent:"space-between",marginBottom:5}}><span style={{fontSize:12,color:T.muted}}>{pl.name}</span><span style={{fontSize:12,fontWeight:700,color:pl.color}}>{n} school{n===1?"":"s"}</span></div>
+                    <Bar val={insts.length?n/insts.length*100:0} color={pl.color}/>
                   </div>
                 );})}
               </Crd>
               <Crd style={{padding:"22px"}}>
                 <div style={{fontSize:13,fontWeight:700,color:T.ink,marginBottom:14}}>Revenue by Plan</div>
-                {PLANS.map(pl=>{const rev=insts.filter(i=>i.plan===pl.id).length*pl.price; return(
+                {planList.map(pl=>{const rev=insts.filter(i=>i.plan===pl.id).length*pl.price; return(
                   <div key={pl.id} style={{display:"flex",justifyContent:"space-between",padding:"9px 0",borderBottom:`1px solid ${T.border}`}}>
                     <div style={{display:"flex",gap:8,alignItems:"center"}}><div style={{width:8,height:8,borderRadius:"50%",background:pl.color}}/><span style={{fontSize:12,color:T.muted}}>{pl.name}</span></div>
                     <span style={{fontSize:13,fontWeight:700,color:pl.color}}>Rs. {rev.toLocaleString()}</span>
@@ -1070,12 +1292,16 @@ const SuperAdmin=({user,db,setDb,onLogout,onReload})=>{
         <div style={{animation:"fadeUp .35s"}}>
           <SecHead pre="Management" title="All Institutes" action={<Btn onClick={()=>setModal("addInst")} style={{marginBottom:4}}>+ Onboard Institute</Btn>}/>
           <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:16}}>
-            {insts.map(i=>{const pl=PLANS.find(p=>p.id===i.plan); return(
+            {insts.map(i=>{
+              const pl=planById(i.plan);
+              // A suspended or pending institute used to get a green badge.
+              const sc=i.status==="active"?T.success:i.status==="suspended"?T.danger:T.warning;
+              return(
               <Crd key={i.id} style={{padding:"24px"}}>
                 <div style={{display:"flex",gap:12,alignItems:"flex-start",marginBottom:16}}>
-                  <div style={{width:48,height:48,borderRadius:14,background:`${pl?.color}18`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:24,flexShrink:0}}>{i.logo}</div>
+                  <div style={{width:48,height:48,borderRadius:14,background:`${pl?.color||T.forest}18`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:24,flexShrink:0}}>{i.logo}</div>
                   <div style={{flex:1}}><div style={{fontSize:14,fontWeight:700,color:T.ink}}>{i.name}</div><div style={{fontSize:12,color:T.muted}}>{i.city} · {i.email}</div></div>
-                  <Bdg label={i.status} color={T.success} bg={`${T.success}15`}/>
+                  <Bdg label={i.status} color={sc} bg={`${sc}15`}/>
                 </div>
                 <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:16}}>
                   {[[i.students,"Students",T.forest],[i.teachers,"Teachers",T.purple]].map(([v,l,c])=>(
@@ -1086,8 +1312,8 @@ const SuperAdmin=({user,db,setDb,onLogout,onReload})=>{
                   ))}
                 </div>
                 <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14}}>
-                  <Bdg label={pl?.name} color={pl?.color} bg={`${pl?.color}18`}/>
-                  <span style={{fontSize:13,fontWeight:700,color:T.forest}}>Rs. {pl?.price.toLocaleString()}/mo</span>
+                  <Bdg label={pl?.name||i.plan} color={pl?.color||T.forest} bg={`${pl?.color||T.forest}18`}/>
+                  <span style={{fontSize:13,fontWeight:700,color:T.forest}}>Rs. {(pl?.price??0).toLocaleString()}/mo</span>
                 </div>
                 <div style={{fontSize:11,color:T.muted,marginBottom:12}}>Joined: {i.joined}</div>
                 <div style={{display:"flex",gap:8}}>
@@ -1261,8 +1487,10 @@ const SuperAdmin=({user,db,setDb,onLogout,onReload})=>{
 // ═══════════════════════════════════════════════════════════════════
 // INSTITUTE ADMIN PORTAL
 // ═══════════════════════════════════════════════════════════════════
+const ADMIN_TABS=["dashboard","students","teachers","parents","attendance","fees","notices","reports","settings"];
+
 const AdminPortal=({user,db,setDb,onLogout,onReload})=>{
-  const[tab,setTab]=useState("dashboard");
+  const[tab,setTab]=useHashTab("dashboard",ADMIN_TABS);
   const[col,setCol]=useState(false);
   const[modal,setModal]=useState(null);
   const[selStu,setSelStu]=useState(null);
@@ -1657,6 +1885,165 @@ const AdminPortal=({user,db,setDb,onLogout,onReload})=>{
     );
   };
 
+  /**
+   * School attendance register.
+   *
+   * This tab was entirely static: a fixed "Grade 8A" heading, a hard-coded
+   * "Thursday, Mar 12, 2026" date, a 87% donut with invented present/absent
+   * counts, and P/A/L buttons and a Save button that had no handlers at all.
+   * Admins are authorised for /attendance/register and /attendance/bulk, so it
+   * now marks real attendance, and the side panel reads the same
+   * /dashboard/admin figures the dashboard tile uses.
+   */
+  const AdminAttendanceTab=()=>{
+    // Classes present in this institute, from the real roster.
+    const classes=[...new Map(
+      students.map(s=>[`${s.grade}|${s.section}`,{grade:s.grade,section:s.section}])
+    ).values()].sort((a,b)=>`${a.grade}${a.section}`.localeCompare(`${b.grade}${b.section}`,undefined,{numeric:true}));
+
+    const[cls,setCls]=useState(classes[0]?`${classes[0].grade}|${classes[0].section}`:"");
+    const[date,setDate]=useState(new Date().toISOString().slice(0,10));
+    const[register,setRegister]=useState(null);
+    const[marks,setMarks]=useState({});
+    const[loading,setLoading]=useState(false);
+    const[saving,setSaving]=useState(false);
+    const[err,setErr]=useState("");
+
+    useEffect(()=>{
+      if(!cls)return;
+      const[grade,section]=cls.split("|");
+      let cancelled=false;
+      setLoading(true);setErr("");
+      api.attendance.register(grade,section,date)
+        .then(r=>{
+          if(cancelled)return;
+          setRegister(r);
+          setMarks(Object.fromEntries(r.students.map(s=>[s.id,s.status??"PRESENT"])));
+        })
+        .catch(e=>{if(!cancelled)setErr(e.message||"Could not load the register.");})
+        .finally(()=>{if(!cancelled)setLoading(false);});
+      return()=>{cancelled=true;};
+    },[cls,date]);
+
+    const save=async()=>{
+      setSaving(true);setErr("");setSaved("");
+      try{
+        const res=await api.attendance.markBulk(
+          date,
+          Object.entries(marks).map(([studentId,status])=>({studentId,status}))
+        );
+        // Reported at portal level: onReload swaps `db`, which remounts this
+        // component and would discard a local success message immediately.
+        setPErr("");setPNote(`Attendance saved for ${res.marked} student(s) on ${date}.`);
+        onReload?.();
+      }catch(e){
+        setErr(e.errors?.[0]?.message||e.message||"Could not save attendance.");
+      }finally{
+        setSaving(false);
+      }
+    };
+
+    const counts=Object.values(marks).reduce((a,s)=>({...a,[s]:(a[s]||0)+1}),{});
+    const prettyDate=new Date(`${date}T00:00:00`).toLocaleDateString(undefined,
+      {weekday:"long",month:"short",day:"numeric",year:"numeric"});
+
+    return(
+      <div style={{animation:"fadeUp .35s"}}>
+        <SecHead pre="Tracking" title="Attendance Management"/>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 280px",gap:18}}>
+          <Crd style={{padding:"26px"}}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-end",marginBottom:18,gap:14,flexWrap:"wrap"}}>
+              <div style={{display:"flex",gap:12,alignItems:"flex-end"}}>
+                <div style={{minWidth:180}}>
+                  <Sel label="Class" options={classes.map(c=>({v:`${c.grade}|${c.section}`,l:`${c.grade} — Section ${c.section}`}))} value={cls} onChange={e=>setCls(e.target.value)}/>
+                </div>
+                <div style={{minWidth:150}}>
+                  <Inp label="Date" type="date" value={date} onChange={e=>setDate(e.target.value)}/>
+                </div>
+              </div>
+              <div style={{display:"flex",gap:10,alignItems:"center",marginBottom:14}}>
+                <Bdg label={prettyDate} color={T.blue} bg={`${T.blue}15`}/>
+                {register?.alreadyMarked&&<Bdg label="Already marked — editing" color={T.forest} bg={`${T.forest}15`}/>}
+                <Btn out color={T.success} onClick={()=>setMarks(m=>Object.fromEntries(Object.keys(m).map(k=>[k,"PRESENT"])))} style={{padding:"7px 14px",fontSize:12}}>Mark All Present</Btn>
+              </div>
+            </div>
+
+            {!classes.length&&<div style={{fontSize:13,color:T.muted,padding:"14px 0"}}>No students enrolled yet — nothing to take a register for.</div>}
+            {loading&&<div style={{fontSize:13,color:T.muted,padding:"14px 0"}}>Loading register…</div>}
+            {!loading&&cls&&!register?.students?.length&&<div style={{fontSize:13,color:T.muted,padding:"14px 0"}}>No active students in this class.</div>}
+
+            {!loading&&register?.students?.length>0&&(
+              <table style={{width:"100%",borderCollapse:"collapse"}}>
+                <thead><tr>{["Student","Roll","Status","Mark"].map(h=><th key={h} style={{textAlign:"left",padding:"9px 12px",fontSize:11,color:T.muted,fontWeight:700,textTransform:"uppercase",letterSpacing:".7px",borderBottom:`2px solid ${T.border}`}}>{h}</th>)}</tr></thead>
+                <tbody>{register.students.map(s=>(
+                  <tr key={s.id} style={{borderBottom:`1px solid ${T.border}`}}>
+                    <td style={{padding:"12px"}}><div style={{display:"flex",gap:8,alignItems:"center"}}><Av name={s.name} size={28} bg={`${T.forest}15`} color={T.forest} fs={10}/><span style={{fontSize:13,color:T.ink,fontWeight:500}}>{s.name}</span></div></td>
+                    <td style={{padding:"12px",fontSize:12,color:T.muted}}>{s.rollNo}</td>
+                    <td style={{padding:"12px"}}><AttBadge s={(marks[s.id]||"PRESENT").toLowerCase()}/></td>
+                    <td style={{padding:"12px"}}>
+                      <div style={{display:"flex",gap:6}}>
+                        {[["P","PRESENT",T.success],["A","ABSENT",T.danger],["L","LATE",T.warning],["Lv","LEAVE",T.muted]].map(([lbl,sv,c])=>(
+                          <span key={sv} onClick={()=>setMarks(m=>({...m,[s.id]:sv}))}
+                            style={{padding:"5px 11px",borderRadius:99,fontSize:11,fontWeight:700,cursor:"pointer",background:marks[s.id]===sv?c:"transparent",color:marks[s.id]===sv?"#fff":c,border:`1.5px solid ${c}`,transition:"all .15s"}}>{lbl}</span>
+                        ))}
+                      </div>
+                    </td>
+                  </tr>
+                ))}</tbody>
+              </table>
+            )}
+
+            {register?.students?.length>0&&(
+              <div style={{display:"flex",gap:14,marginTop:16,fontSize:12}}>
+                <span style={{color:T.success,fontWeight:600}}>{counts.PRESENT||0} present</span>
+                <span style={{color:T.danger,fontWeight:600}}>{counts.ABSENT||0} absent</span>
+                <span style={{color:T.warning,fontWeight:600}}>{counts.LATE||0} late</span>
+                {counts.LEAVE>0&&<span style={{color:T.muted,fontWeight:600}}>{counts.LEAVE} on leave</span>}
+              </div>
+            )}
+
+            {err&&<div style={{background:`${T.danger}12`,color:T.danger,borderRadius:10,padding:"10px 14px",fontSize:13,marginTop:14,border:`1px solid ${T.danger}30`}}>{err}</div>}
+
+            <Btn full onClick={save} disabled={saving||loading||!register?.students?.length} style={{marginTop:18,padding:"12px"}}>{saving?"Saving…":"Save Attendance Record"}</Btn>
+          </Crd>
+
+          <div style={{display:"flex",flexDirection:"column",gap:14}}>
+            <Crd style={{padding:"22px"}}>
+              <div style={{fontSize:13,fontWeight:700,color:T.ink,marginBottom:14}}>School-Wide Today</div>
+              {!todayMarked?(
+                <div style={{textAlign:"center",padding:"16px 0"}}>
+                  <div style={{fontSize:26,marginBottom:6,opacity:.35}}>◷</div>
+                  <div style={{fontSize:12.5,color:T.muted,lineHeight:1.6}}>
+                    {students.length===0?"No students enrolled yet.":"Attendance hasn't been taken today."}
+                  </div>
+                </div>
+              ):(
+                <>
+                  <div style={{display:"flex",justifyContent:"center",marginBottom:14}}><Donut p={todayAtt.rate} color={T.forest} size={90}/></div>
+                  {[["Present",todayAtt.present,T.success],["Absent",todayAtt.absent,T.danger],["Late",todayAtt.late,T.warning],["Leave",todayAtt.leave,T.muted]].map(([l,v,c])=>(
+                    <div key={l} style={{display:"flex",justifyContent:"space-between",padding:"8px 0",borderBottom:`1px solid ${T.border}`}}>
+                      <span style={{fontSize:13,color:T.muted}}>{l}</span><span style={{fontSize:13,fontWeight:700,color:c}}>{v} student{v===1?"":"s"}</span>
+                    </div>
+                  ))}
+                </>
+              )}
+            </Crd>
+            <Crd style={{padding:"22px"}}>
+              <div style={{fontSize:13,fontWeight:700,color:T.ink,marginBottom:14}}>Monthly Summary</div>
+              {!students.length&&<div style={{fontSize:12,color:T.muted}}>No students yet.</div>}
+              {students.map(s=>(
+                <div key={s.id} style={{marginBottom:12}}>
+                  <div style={{display:"flex",justifyContent:"space-between",marginBottom:4}}><span style={{fontSize:12,color:T.muted}}>{s.name}</span><span style={{fontSize:12,fontWeight:700,color:s.att.present>=90?T.success:T.warning}}>{s.att.present}%</span></div>
+                  <Bar val={s.att.present} color={s.att.present>=90?T.success:T.warning}/>
+                </div>
+              ))}
+            </Crd>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
   const NoticeModal=()=>{
     const[f,setF]=useState({title:"",cat:"General",body:"",notify:"Everyone"});
     const s=(k,v)=>setF(x=>({...x,[k]:v}));
@@ -1838,7 +2225,7 @@ const AdminPortal=({user,db,setDb,onLogout,onReload})=>{
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
           <Inp label="Full Name*" value={f.name} onChange={e=>s("name",e.target.value)} style={{gridColumn:"1/-1"}}/>
           {type!=="Student"&&<Inp label="Email*" value={f.email} onChange={e=>s("email",e.target.value)} type="email"/>}
-          <Inp label="Phone" value={f.phone} onChange={e=>s("phone",e.target.value)} placeholder="0300-0000000"/>
+          <Inp label="Phone" value={f.phone} onChange={e=>s("phone",e.target.value)} placeholder="03001234567" maxLength={11}/>
           {type==="Student"&&<>
             <Inp label="Grade*" value={f.grade} onChange={e=>s("grade",e.target.value)}/>
             <Inp label="Section*" value={f.section} onChange={e=>s("section",e.target.value)}/>
@@ -1984,6 +2371,68 @@ const AdminPortal=({user,db,setDb,onLogout,onReload})=>{
     );
   };
 
+  /**
+   * Notification preferences. These were decorative switches; each one now
+   * gates the matching server-side action, and the card says which.
+   */
+  const NotificationSettingsCard=()=>{
+    const[prefs,setPrefs]=useState(null);
+    const[busy,setBusy]=useState("");
+    const[e2,setE2]=useState("");
+    const[saved,setSaved]=useState("");
+
+    useEffect(()=>{
+      let cancelled=false;
+      api.institutes.notificationSettings()
+        .then(r=>{if(!cancelled)setPrefs(r);})
+        .catch(x=>{if(!cancelled)setE2(x.message||"Couldn't load notification settings.");});
+      return()=>{cancelled=true;};
+    },[]);
+
+    const toggle=async p=>{
+      setBusy(p.key);setE2("");setSaved("");
+      // Optimistic flip, rolled back if the server refuses.
+      setPrefs(list=>list.map(x=>x.key===p.key?{...x,enabled:!x.enabled}:x));
+      try{
+        const next=await api.institutes.updateNotificationSettings({[p.key]:!p.enabled});
+        setPrefs(next);
+        setSaved(`${p.label} ${!p.enabled?"enabled":"disabled"}.`);
+        setTimeout(()=>setSaved(""),2500);
+      }catch(x){
+        setPrefs(list=>list.map(y=>y.key===p.key?{...y,enabled:p.enabled}:y));
+        setE2(x.message||"Couldn't save that setting.");
+      }finally{
+        setBusy("");
+      }
+    };
+
+    return(
+      <Crd style={{padding:"26px"}}>
+        <div style={{fontSize:14,fontWeight:700,color:T.ink,marginBottom:4}}>Notifications</div>
+        <div style={{fontSize:12,color:T.muted,marginBottom:16,lineHeight:1.6}}>
+          Each switch controls a real action on the server — turning one off stops it being sent.
+        </div>
+
+        {!prefs&&!e2&&<div style={{fontSize:13,color:T.muted,padding:"8px 0"}}>Loading…</div>}
+
+        {prefs?.map(p=>(
+          <div key={p.key} style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:14,padding:"11px 0",borderBottom:`1px solid ${T.border}`,opacity:busy===p.key?.6:1}}>
+            <div style={{minWidth:0}}>
+              <div style={{fontSize:13,color:T.ink,fontWeight:600}}>{p.label}</div>
+              <div style={{fontSize:11.5,color:T.muted,marginTop:2,lineHeight:1.5}}>{p.description}</div>
+            </div>
+            <span onClick={()=>!busy&&toggle(p)} style={{cursor:busy?"default":"pointer",flexShrink:0}}>
+              <Toggle on={p.enabled}/>
+            </span>
+          </div>
+        ))}
+
+        {saved&&<div style={{fontSize:12,color:T.success,marginTop:12,fontWeight:600}}>{saved}</div>}
+        {e2&&<div style={{background:`${T.danger}12`,color:T.danger,borderRadius:10,padding:"10px 14px",fontSize:12.5,marginTop:12,border:`1px solid ${T.danger}30`}}>{e2}</div>}
+      </Crd>
+    );
+  };
+
   /** Edit an existing notice. The API re-checks institute ownership. */
   const EditNoticeModal=({notice})=>{
     const CAT_LABEL={Academic:"ACADEMIC",Finance:"FINANCE",Event:"EVENT",General:"GENERAL",Urgent:"URGENT"};
@@ -2034,6 +2483,15 @@ const AdminPortal=({user,db,setDb,onLogout,onReload})=>{
     const subjectOptions=["Mathematics","Physics","Chemistry","Biology","English","Urdu","Computer Sc.","Pak. Studies"];
     const[saving,setSaving]=useState(false);
     const[err,setErr]=useState("");
+
+    // Same rules the API enforces, surfaced before a round-trip. A student
+    // needs no email (they never get an account); staff and guardians do.
+    const vName  = f.name  ? nameError(f.name, `${type} name`) : "";
+    const vEmail = f.email ? emailError(f.email,{required:type!=="Student"}) : "";
+    const vPhone = f.phone ? phoneError(f.phone,{required:false}) : "";
+    const formOk =
+      !nameError(f.name, `${type} name`) && !vPhone && !vEmail &&
+      (type==="Student" ? Boolean(f.grade.trim()&&f.roll.trim()) : !emailError(f.email));
 
     const create=async()=>{
       setSaving(true);setErr("");
@@ -2086,7 +2544,7 @@ const AdminPortal=({user,db,setDb,onLogout,onReload})=>{
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
           <Inp label="Full Name*" value={f.name} onChange={e=>s("name",e.target.value)} placeholder={type==="Student"?"Zain Ahmed":type==="Teacher"?"Mr. Hassan":"Sara Ahmed"} style={{gridColumn:"1/-1"}}/>
           <Inp label="Email*" value={f.email} onChange={e=>s("email",e.target.value)} placeholder="email@example.com" type="email"/>
-          <Inp label="Phone" value={f.phone} onChange={e=>s("phone",e.target.value)} placeholder="0300-0000000"/>
+          <Inp label="Phone" value={f.phone} onChange={e=>s("phone",e.target.value)} placeholder="03001234567" maxLength={11}/>
           {type==="Student"&&<>
             <Inp label="Grade*" value={f.grade} onChange={e=>s("grade",e.target.value)} placeholder="Grade 8"/>
             <Inp label="Section" value={f.section} onChange={e=>s("section",e.target.value)} placeholder="A"/>
@@ -2110,10 +2568,13 @@ const AdminPortal=({user,db,setDb,onLogout,onReload})=>{
               : <>A login email and temporary password will be generated and sent to <b>{f.email||"the provided email"}</b>.</>}
           </div>
         </div>
+        {[vName,vEmail,vPhone].filter(Boolean).map(m=>(
+          <div key={m} style={{background:`${T.danger}0D`,color:T.danger,borderRadius:9,padding:"8px 12px",fontSize:12,marginBottom:8,border:`1px solid ${T.danger}25`}}>{m}</div>
+        ))}
         {err&&<div style={{background:`${T.danger}12`,color:T.danger,borderRadius:10,padding:"10px 14px",fontSize:13,marginBottom:12,border:`1px solid ${T.danger}30`}}>{err}</div>}
         <div style={{display:"flex",gap:10}}>
           <Btn onClick={()=>setModal(null)} out color={T.muted} style={{flex:1,padding:"11px"}}>Cancel</Btn>
-          <Btn onClick={create} style={{flex:2,padding:"11px"}} disabled={!f.name||(type!=="Student"&&!f.email)||saving}>
+          <Btn onClick={create} style={{flex:2,padding:"11px"}} disabled={!formOk||saving}>
             {saving?"Creating…":type==="Student"?"Add Student":"Create & Send Login"}
           </Btn>
         </div>
@@ -2215,7 +2676,11 @@ const AdminPortal=({user,db,setDb,onLogout,onReload})=>{
                 <span onClick={()=>setSelStu(null)} style={{cursor:"pointer",color:T.muted,fontSize:22}}>×</span>
               </div>
               <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:12,marginBottom:16}}>
-                {[["GPA",selStu.gpa,T.forest],["Rank",`#${selStu.rank}`,T.purple],["Attendance",`${selStu.att.present}%`,T.success],["AI Score","82/100",T.gold]].map(([l,v,c])=>(
+                {/* Every tile is a real figure from the students endpoint. The
+                    fourth used to read a literal "82/100" AI score for every
+                    student alike; the list payload carries no insight data, so
+                    it now shows the subject average, which it does carry. */}
+                {[["GPA",selStu.gpa,T.forest],["Rank",`#${selStu.rank}`,T.purple],["Attendance",`${selStu.att.present}%`,T.success],["Average",`${selStu.average}%`,T.gold]].map(([l,v,c])=>(
                   <div key={l} style={{padding:"12px",background:T.paper,borderRadius:12,textAlign:"center"}}>
                     <div style={{fontFamily:"Georgia,serif",fontSize:20,fontWeight:800,color:c}}>{v}</div>
                     <div style={{fontSize:10,color:T.muted,marginTop:3}}>{l}</div>
@@ -2249,7 +2714,7 @@ const AdminPortal=({user,db,setDb,onLogout,onReload})=>{
                     <td style={{padding:"12px",fontSize:13,fontWeight:700,color:T.forest}}>{s.gpa}</td>
                     <td style={{padding:"12px",fontSize:13,color:s.att.present>=90?T.success:T.warning,fontWeight:600}}>{s.att.present}%</td>
                     <td style={{padding:"12px"}}><Bdg label={s.fees.some(f=>f.status==="pending")?"Pending":"Paid"} color={s.fees.some(f=>f.status==="pending")?T.warning:T.success} bg={s.fees.some(f=>f.status==="pending")?`${T.warning}15`:`${T.success}15`}/></td>
-                    <td style={{padding:"12px"}}><Bdg label="Active" color={T.success} bg={`${T.success}15`}/></td>
+                    <td style={{padding:"12px"}}><Bdg label={s.status==="active"?"Active":s.status.charAt(0).toUpperCase()+s.status.slice(1)} color={s.status==="active"?T.success:T.muted} bg={s.status==="active"?`${T.success}15`:`${T.muted}15`}/></td>
                     <td style={{padding:"12px"}}><RowActions busy={deleting===s.id} onEdit={()=>setEditing({type:"Student",record:s})} onDelete={()=>removeRow("Student",s)}/></td>
                   </tr>
                 ))}</tbody>
@@ -2265,7 +2730,7 @@ const AdminPortal=({user,db,setDb,onLogout,onReload})=>{
                   <span onClick={()=>setSelStu(null)} style={{cursor:"pointer",color:T.muted,fontSize:20}}>×</span>
                 </div>
                 <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:16}}>
-                  {[["GPA",selStu.gpa,T.forest],["Rank",`#${selStu.rank}`,T.purple],["Att.",`${selStu.att.present}%`,T.success],["AI","82",T.gold]].map(([l,v,c])=>(
+                  {[["GPA",selStu.gpa,T.forest],["Rank",`#${selStu.rank}`,T.purple],["Att.",`${selStu.att.present}%`,T.success],["Avg.",`${selStu.average}%`,T.gold]].map(([l,v,c])=>(
                     <div key={l} style={{padding:"10px",background:T.paper,borderRadius:10,textAlign:"center"}}>
                       <div style={{fontFamily:"Georgia,serif",fontSize:18,fontWeight:800,color:c}}>{v}</div>
                       <div style={{fontSize:10,color:T.muted}}>{l}</div>
@@ -2279,10 +2744,22 @@ const AdminPortal=({user,db,setDb,onLogout,onReload})=>{
                     <Bar val={s.score} color={s.color} delay={i*40}/>
                   </div>
                 ))}
+                {/* These three were decorative. Students have no login, so the
+                    old "Reset PW" had nothing to reset — the guardian's account
+                    is the one that exists, and that's what it offers now. */}
                 <div style={{display:"flex",gap:8,marginTop:16}}>
-                  <Btn out color={T.forest} style={{flex:1,padding:"8px",fontSize:12}}>Edit</Btn>
-                  <Btn out color={T.blue} style={{flex:1,padding:"8px",fontSize:12}}>Reset PW</Btn>
-                  <Btn out color={T.danger} style={{flex:1,padding:"8px",fontSize:12}}>Remove</Btn>
+                  <Btn out color={T.forest} onClick={()=>setEditing({type:"Student",record:selStu})} style={{flex:1,padding:"8px",fontSize:12}}>Edit</Btn>
+                  {(()=>{
+                    const guardian=parents.find(p=>p.id===selStu.parentId);
+                    return guardian?.userId
+                      ? <Btn out color={T.blue} onClick={()=>resetPw(guardian)} disabled={resetting===guardian.userId} style={{flex:1,padding:"8px",fontSize:12}}>
+                          {resetting===guardian.userId?"…":"Guardian PW"}
+                        </Btn>
+                      : null;
+                  })()}
+                  <Btn out color={T.danger} onClick={()=>removeRow("Student",selStu)} disabled={deleting===selStu.id} style={{flex:1,padding:"8px",fontSize:12}}>
+                    {deleting===selStu.id?"…":"Remove"}
+                  </Btn>
                 </div>
               </Crd>
             )}
@@ -2303,7 +2780,9 @@ const AdminPortal=({user,db,setDb,onLogout,onReload})=>{
                     <div style={{fontSize:12,color:T.muted,marginTop:2}}>{t.subject}</div>
                     <div style={{fontSize:11,color:T.muted}}>{t.email}</div>
                   </div>
-                  <Bdg label={t.status} color={T.success} bg={`${T.success}15`}/>
+                  {/* Coloured from the actual status — an inactive teacher used
+                      to get a green "inactive" badge. */}
+                  <Bdg label={t.status} color={t.status==="active"?T.success:T.muted} bg={t.status==="active"?`${T.success}15`:`${T.muted}15`}/>
                 </div>
                 <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:10,marginBottom:14}}>
                   {[[t.classes.length,"Classes"],[t.students,"Students"],[t.subjects.length,"Subjects"]].map(([v,l])=>(
@@ -2355,60 +2834,7 @@ const AdminPortal=({user,db,setDb,onLogout,onReload})=>{
         </div>
       )}
       {/* ATTENDANCE */}
-      {tab==="attendance"&&(
-        <div style={{animation:"fadeUp .35s"}}>
-          <SecHead pre="Tracking" title="Attendance Management"/>
-          <div style={{display:"grid",gridTemplateColumns:"1fr 280px",gap:18}}>
-            <Crd style={{padding:"26px"}}>
-              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:18}}>
-                <div style={{fontSize:14,fontWeight:700,color:T.ink}}>Mark Attendance — Grade 8A</div>
-                <Bdg label="Thursday, Mar 12, 2026" color={T.blue} bg={`${T.blue}15`}/>
-              </div>
-              <table style={{width:"100%",borderCollapse:"collapse"}}>
-                <thead><tr>{["Student","Roll","Status","Mark"].map(h=><th key={h} style={{textAlign:"left",padding:"9px 12px",fontSize:11,color:T.muted,fontWeight:700,textTransform:"uppercase",letterSpacing:".7px",borderBottom:`2px solid ${T.border}`}}>{h}</th>)}</tr></thead>
-                <tbody>{students.map((s,i)=>{
-                  const st=s.weekAtt[2]?.s||"present";
-                  return(
-                    <tr key={s.id} style={{borderBottom:`1px solid ${T.border}`}}>
-                      <td style={{padding:"12px"}}><div style={{display:"flex",gap:8,alignItems:"center"}}><Av name={s.name} size={28} bg={`${T.forest}15`} color={T.forest} fs={10}/><span style={{fontSize:13,color:T.ink,fontWeight:500}}>{s.name}</span></div></td>
-                      <td style={{padding:"12px",fontSize:12,color:T.muted}}>{s.roll}</td>
-                      <td style={{padding:"12px"}}><AttBadge s={st}/></td>
-                      <td style={{padding:"12px"}}>
-                        <div style={{display:"flex",gap:6}}>
-                          {[["P","present",T.success],["A","absent",T.danger],["L","late",T.warning]].map(([lbl,sv,c])=>(
-                            <span key={sv} style={{padding:"5px 11px",borderRadius:99,fontSize:11,fontWeight:700,cursor:"pointer",background:st===sv?c:"transparent",color:st===sv?"#fff":c,border:`1.5px solid ${c}`,transition:"all .15s"}}>{lbl}</span>
-                          ))}
-                        </div>
-                      </td>
-                    </tr>
-                  );
-                })}</tbody>
-              </table>
-              <Btn full style={{marginTop:18,padding:"12px"}}>Save Attendance Record</Btn>
-            </Crd>
-            <div style={{display:"flex",flexDirection:"column",gap:14}}>
-              <Crd style={{padding:"22px"}}>
-                <div style={{fontSize:13,fontWeight:700,color:T.ink,marginBottom:14}}>School-Wide Today</div>
-                <div style={{display:"flex",justifyContent:"center",marginBottom:14}}><Donut p={87} color={T.forest} size={90}/></div>
-                {[["Present","87",T.success],["Absent","8",T.danger],["Late","5",T.warning]].map(([l,v,c])=>(
-                  <div key={l} style={{display:"flex",justifyContent:"space-between",padding:"8px 0",borderBottom:`1px solid ${T.border}`}}>
-                    <span style={{fontSize:13,color:T.muted}}>{l}</span><span style={{fontSize:13,fontWeight:700,color:c}}>{v} students</span>
-                  </div>
-                ))}
-              </Crd>
-              <Crd style={{padding:"22px"}}>
-                <div style={{fontSize:13,fontWeight:700,color:T.ink,marginBottom:14}}>Monthly Summary</div>
-                {students.map(s=>(
-                  <div key={s.id} style={{marginBottom:12}}>
-                    <div style={{display:"flex",justifyContent:"space-between",marginBottom:4}}><span style={{fontSize:12,color:T.muted}}>{s.name}</span><span style={{fontSize:12,fontWeight:700,color:s.att.present>=90?T.success:T.warning}}>{s.att.present}%</span></div>
-                    <Bar val={s.att.present} color={s.att.present>=90?T.success:T.warning}/>
-                  </div>
-                ))}
-              </Crd>
-            </div>
-          </div>
-        </div>
-      )}
+      {tab==="attendance"&&<AdminAttendanceTab/>}
       {/* FEES */}
       {tab==="fees"&&<FeesTab/>}
       {/* NOTICES */}
@@ -2447,15 +2873,7 @@ const AdminPortal=({user,db,setDb,onLogout,onReload})=>{
             <InstituteSettingsCard/>
             <div style={{display:"flex",flexDirection:"column",gap:16}}>
               <SubscriptionCard/>
-              <Crd style={{padding:"26px"}}>
-                <div style={{fontSize:14,fontWeight:700,color:T.ink,marginBottom:16}}>Notifications</div>
-                {[["Fee reminders to parents",true],["Attendance alerts",true],["AI weekly reports",false],["Exam notifications",true]].map(([l,on])=>(
-                  <div key={l} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"10px 0",borderBottom:`1px solid ${T.border}`}}>
-                    <span style={{fontSize:13,color:T.ink}}>{l}</span>
-                    <Toggle on={on}/>
-                  </div>
-                ))}
-              </Crd>
+              <NotificationSettingsCard/>
             </div>
           </div>
         </div>
@@ -2483,11 +2901,17 @@ const AdminPortal=({user,db,setDb,onLogout,onReload})=>{
 // ═══════════════════════════════════════════════════════════════════
 // TEACHER PORTAL
 // ═══════════════════════════════════════════════════════════════════
-const TeacherPortal=({user,db,onLogout,onReload})=>{
-  const[tab,setTab]=useState("dashboard");
+const TEACHER_TABS=["dashboard","classes","gradebook","attendance","messages","notices","profile"];
+
+const TeacherPortal=({user,db,onLogout,onReload,onUser})=>{
+  const[tab,setTab]=useHashTab("dashboard",TEACHER_TABS);
   const[col,setCol]=useState(false);
   const[selMsg,setSelMsg]=useState(null);
   const[reply,setReply]=useState("");
+  const[replyBusy,setReplyBusy]=useState(false);
+  const[replySent,setReplySent]=useState("");
+  // Portal-level so it survives the remount that follows a profile save.
+  const[profileNote,setProfileNote]=useState("");
   const[modal,setModal]=useState(null);
   const inst=db.institutes.find(i=>i.id===user.inst)||db.institutes[0];
   const teacher=db.teachers.find(t=>t.id===user.ref)||db.teachers[0];
@@ -2497,7 +2921,72 @@ const TeacherPortal=({user,db,onLogout,onReload})=>{
   const mySubjects=db.teacherDashboard?.subjects??[];
   const todaySchedule=db.teacherDashboard?.todaySchedule??[];
   // Weakest and strongest of this teacher's students, by overall average.
+  /**
+   * A subject this teacher actually teaches, on a given student.
+   *
+   * Matched on teacherId, not the display name: the student list used to omit
+   * the subject's teacher entirely, so this filter silently matched nothing
+   * and left the dashboard roster, quick-grade panel and grade book blank.
+   */
+  const mySubjectOf=s=>s.subjects.find(x=>x.teacherId&&x.teacherId===teacher?.id);
   const ranked=[...myStudents].filter(s=>s.average>0).sort((a,b)=>a.average-b.average);
+
+  /**
+   * Reply to a message. This used to clear the input and nothing else, so the
+   * teacher saw their message vanish and assumed it had been sent.
+   */
+  const sendReply=async()=>{
+    if(!reply.trim()||!selMsg||replyBusy)return;
+    const body=reply;
+    setReply("");setReplyBusy(true);setReplySent("");
+    try{
+      await api.messages.reply(selMsg.id,body);
+      setReplySent(`Reply sent to ${selMsg.from}.`);
+      setTimeout(()=>setReplySent(""),2500);
+      onReload?.();
+    }catch(e){
+      setReply(body); // don't lose what they typed
+      setReplySent(e.message||"Could not send the reply.");
+    }finally{
+      setReplyBusy(false);
+    }
+  };
+
+  /** Opening a message marks it read, so the sidebar badge means something. */
+  const openMessage=async m=>{
+    setSelMsg(m);
+    if(!m.unread)return;
+    try{
+      await api.messages.markRead(m.id);
+      onReload?.();
+    }catch{/* a failed read receipt shouldn't block reading the message */}
+  };
+
+  // Quick grade entry — writes the enrolment's current score. The server
+  // recomputes letter grade and prediction from it, so nothing is derived here.
+  const[quickScores,setQuickScores]=useState({});
+  const[quickBusy,setQuickBusy]=useState("");
+  const[quickMsg,setQuickMsg]=useState(null);
+
+  const saveQuickScore=async(sub,student)=>{
+    const raw=quickScores[sub.enrollmentId];
+    const value=Number(raw);
+    if(raw===undefined||raw===""||!Number.isFinite(value)||value<0||value>100){
+      setQuickMsg({bad:true,text:"Score must be a number between 0 and 100."});
+      return;
+    }
+    setQuickBusy(sub.enrollmentId);setQuickMsg(null);
+    try{
+      await api.subjects.updateEnrollment(sub.enrollmentId,{currentScore:value});
+      setQuickMsg({bad:false,text:`${student.name} — ${sub.name} updated to ${value}%.`});
+      setQuickScores(v=>{const{[sub.enrollmentId]:_,...rest}=v;return rest;});
+      onReload?.();
+    }catch(e){
+      setQuickMsg({bad:true,text:e.errors?.[0]?.message||e.message||"Could not save that score."});
+    }finally{
+      setQuickBusy("");
+    }
+  };
   const atRisk=ranked.find(s=>s.average<70||s.att.rate<85)??null;
   const topPerformer=ranked[ranked.length-1]??null;
 
@@ -2727,6 +3216,201 @@ const TeacherPortal=({user,db,onLogout,onReload})=>{
     );
   };
 
+  /**
+   * Grade book. One column per real assessment title in the chosen subject.
+   *
+   * The columns used to be a fixed "Quiz 1 / Quiz 2 / Test 1 / Test 2 / Project"
+   * header row filled by arithmetic on the enrolment's current and previous
+   * score — invented marks presented as if they had been graded. The API
+   * already returns the actual per-assessment breakdown, so it drives this now.
+   */
+  const GradeBookTab=()=>{
+    const[subjectId,setSubjectId]=useState(mySubjects[0]?.id??"");
+    const[book,setBook]=useState(null);
+    const[loading,setLoading]=useState(false);
+    const[err,setErr]=useState("");
+
+    useEffect(()=>{
+      if(!subjectId){setBook(null);return;}
+      let cancelled=false;
+      setLoading(true);setErr("");
+      api.assessments.gradebook({subjectId})
+        .then(r=>{if(!cancelled)setBook(r);})
+        .catch(e=>{if(!cancelled)setErr(e.message||"Could not load the grade book.");})
+        .finally(()=>{if(!cancelled)setLoading(false);});
+      return()=>{cancelled=true;};
+    },[subjectId]);
+
+    const cols=book?.columns??[];
+
+    const exportCsv=()=>{
+      if(!book?.rows?.length)return;
+      downloadCsv(
+        stamped(`gradebook-${book.subject.name.replace(/\W+/g,"-").toLowerCase()}`,"csv"),
+        book.rows.map(r=>({
+          roll:r.student.rollNo,name:r.student.name,
+          ...Object.fromEntries(cols.map(c=>[c,r.marks[c]?`${r.marks[c].obtained}/${r.marks[c].total}`:""])),
+          average:r.average??"",grade:r.letterGrade??"",trend:r.trend??"",
+        })),
+        [["Roll No","roll"],["Student","name"],...cols.map(c=>[c,c]),
+          ["Average (%)","average"],["Grade","grade"],["Trend","trend"]]
+      );
+    };
+
+    return(
+      <div style={{animation:"fadeUp .35s"}}>
+        <SecHead pre="Academic" title="Grade Book" action={
+          <Btn onClick={()=>setModal("assessment")} style={{marginBottom:4}}>+ Add Assessment</Btn>
+        }/>
+        <Crd style={{padding:"26px"}}>
+          <div style={{display:"flex",gap:12,alignItems:"flex-end",justifyContent:"space-between",flexWrap:"wrap",marginBottom:8}}>
+            <div style={{minWidth:230}}>
+              <Sel label="Subject" options={mySubjects.map(x=>({v:x.id,l:`${x.name}${x.grade?` — ${x.grade}`:""}`}))} value={subjectId} onChange={e=>setSubjectId(e.target.value)}/>
+            </div>
+            <div style={{display:"flex",gap:10,alignItems:"center",marginBottom:14}}>
+              {book&&<Bdg label={`Class average ${book.classAverage??0}%`} color={T.forest} bg={`${T.forest}15`}/>}
+              <Btn out color={T.blue} onClick={exportCsv} disabled={!book?.rows?.length} style={{padding:"7px 14px",fontSize:12}}>Export CSV</Btn>
+            </div>
+          </div>
+
+          {!mySubjects.length&&<div style={{fontSize:13,color:T.muted,padding:"12px 0"}}>You aren't assigned to any subjects yet.</div>}
+          {loading&&<div style={{fontSize:13,color:T.muted,padding:"12px 0"}}>Loading grade book…</div>}
+          {err&&<div style={{background:`${T.danger}12`,color:T.danger,borderRadius:10,padding:"10px 14px",fontSize:13,border:`1px solid ${T.danger}30`}}>{err}</div>}
+
+          {!loading&&!err&&book&&!book.rows.length&&(
+            <div style={{fontSize:13,color:T.muted,padding:"12px 0"}}>No students are enrolled in this subject yet.</div>
+          )}
+          {!loading&&!err&&book?.rows?.length>0&&!cols.length&&(
+            <div style={{fontSize:13,color:T.muted,padding:"12px 0",lineHeight:1.6}}>
+              No assessments recorded for this subject yet. Use <b>+ Add Assessment</b> to enter the first set of marks.
+            </div>
+          )}
+
+          {!loading&&!err&&book?.rows?.length>0&&cols.length>0&&(
+            <table style={{width:"100%",borderCollapse:"collapse"}}>
+              <thead><tr>{["Student",...cols,"Avg.","Grade","Trend"].map(h=>(
+                <th key={h} style={{textAlign:"left",padding:"9px 12px",fontSize:11,color:T.muted,fontWeight:700,textTransform:"uppercase",letterSpacing:".7px",borderBottom:`2px solid ${T.border}`}}>{h}</th>
+              ))}</tr></thead>
+              <tbody>{book.rows.map(r=>(
+                <tr key={r.enrollmentId} style={{borderBottom:`1px solid ${T.border}`}}>
+                  <td style={{padding:"12px"}}><div style={{display:"flex",gap:8,alignItems:"center"}}>
+                    <Av name={r.student.name} size={28} bg={`${T.purple}18`} color={T.purple} fs={10}/>
+                    <span style={{fontSize:13,color:T.ink,fontWeight:600}}>{r.student.name}</span>
+                  </div></td>
+                  {cols.map(c=>{
+                    const m=r.marks[c];
+                    return(
+                      <td key={c} style={{padding:"12px",fontSize:13,fontWeight:600,
+                        color:!m?T.muted:m.percentage>=80?T.success:m.percentage>=60?T.warning:T.danger}}>
+                        {m?`${m.obtained}/${m.total}`:"—"}
+                      </td>
+                    );
+                  })}
+                  <td style={{padding:"12px",fontSize:15,fontWeight:800,color:T.ink,fontFamily:"Georgia,serif"}}>{r.average!=null?`${Math.round(r.average)}%`:"—"}</td>
+                  <td style={{padding:"12px"}}>{r.letterGrade?<Bdg label={r.letterGrade} color={gc(r.letterGrade)} bg={`${gc(r.letterGrade)}15`}/>:<span style={{fontSize:12,color:T.muted}}>—</span>}</td>
+                  <td style={{padding:"12px",fontSize:13,fontWeight:600,color:r.trend>0?T.success:r.trend<0?T.danger:T.muted}}>
+                    {r.trend>0?`↑ ${r.trend}`:r.trend<0?`↓ ${Math.abs(r.trend)}`:"—"}
+                  </td>
+                </tr>
+              ))}</tbody>
+            </table>
+          )}
+        </Crd>
+      </div>
+    );
+  };
+
+  /**
+   * Name and phone go to PATCH /auth/me. Email isn't editable here — it is the
+   * sign-in identity and the API deliberately doesn't accept it on this route,
+   * so the field is shown read-only rather than as a control that does nothing.
+   */
+  const EditProfileCard=()=>{
+    const[f,setF]=useState({name:user.name??"",phone:user.phone??teacher?.phone??""});
+    const[saving,setSaving]=useState(false);
+    const[e2,setE2]=useState("");
+
+    const vName=f.name?nameError(f.name,"Name"):"";
+    const vPhone=f.phone?phoneError(f.phone,{required:false}):"";
+
+    const save=async()=>{
+      setSaving(true);setE2("");setProfileNote("");
+      try{
+        const updated=await api.auth.updateProfile({name:f.name.trim(),phone:f.phone.trim()||null});
+        // Feedback lives on the portal, not here: pushing the new user up
+        // re-runs the data load, which remounts this card and would wipe any
+        // state it held.
+        setProfileNote("Profile updated.");
+        onUser?.({...user,...toLegacyUser(updated)});
+      }catch(x){
+        setE2(x.errors?.[0]?.message||x.message||"Could not update your profile.");
+      }finally{
+        setSaving(false);
+      }
+    };
+
+    return(
+      <Crd style={{padding:"26px"}}>
+        <div style={{fontSize:14,fontWeight:700,color:T.ink,marginBottom:18}}>Edit Profile</div>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
+          <Inp label="Full Name" value={f.name} onChange={e=>setF(v=>({...v,name:e.target.value}))}/>
+          <Inp label="Phone" value={f.phone} onChange={e=>setF(v=>({...v,phone:e.target.value}))} placeholder="03001234567" maxLength={11}/>
+        </div>
+        <div style={{marginBottom:14}}>
+          <div style={{fontSize:11,fontWeight:700,color:T.muted,marginBottom:5,textTransform:"uppercase",letterSpacing:".6px"}}>Email</div>
+          <div style={{padding:"10px 14px",borderRadius:10,border:`1.5px solid ${T.border}`,fontSize:13,color:T.muted,background:T.paper}}>{teacher?.email||user.email}</div>
+          <div style={{fontSize:11.5,color:T.muted,marginTop:5}}>Your sign-in address. Ask an admin to change it.</div>
+        </div>
+        {[vName,vPhone].filter(Boolean).map(m=>(
+          <div key={m} style={{background:`${T.danger}0D`,color:T.danger,borderRadius:9,padding:"8px 12px",fontSize:12,marginBottom:8,border:`1px solid ${T.danger}25`}}>{m}</div>
+        ))}
+        {e2&&<div style={{background:`${T.danger}12`,color:T.danger,borderRadius:10,padding:"10px 14px",fontSize:13,marginBottom:12,border:`1px solid ${T.danger}30`}}>{e2}</div>}
+        {profileNote&&<div style={{background:`${T.success}12`,color:T.success,borderRadius:10,padding:"10px 14px",fontSize:13,marginBottom:12,border:`1px solid ${T.success}30`}}>✓ {profileNote}</div>}
+        <Btn full onClick={save} disabled={saving||!f.name.trim()||Boolean(vName||vPhone)} style={{padding:"11px",marginTop:4}}>{saving?"Saving…":"Update Profile"}</Btn>
+      </Crd>
+    );
+  };
+
+  /** Change own password. The API signs out every other device on success. */
+  const ChangePasswordCard=()=>{
+    const[f,setF]=useState({current:"",next:"",confirm:""});
+    const s=(k,v)=>setF(x=>({...x,[k]:v}));
+    const[saving,setSaving]=useState(false);
+    const[e2,setE2]=useState("");
+    const[done,setDone]=useState("");
+
+    const vNext=f.next?passwordError(f.next):"";
+    const mismatch=f.confirm&&f.next!==f.confirm?"The two new passwords don't match.":"";
+
+    const save=async()=>{
+      setSaving(true);setE2("");setDone("");
+      try{
+        const r=await api.auth.changePassword(f.current,f.next);
+        setF({current:"",next:"",confirm:""});
+        setDone(r?.message||"Password changed. Your other devices have been signed out.");
+      }catch(x){
+        setE2(x.errors?.[0]?.message||x.message||"Could not change your password.");
+      }finally{
+        setSaving(false);
+      }
+    };
+
+    return(
+      <Crd style={{padding:"26px"}}>
+        <div style={{fontSize:14,fontWeight:700,color:T.ink,marginBottom:18}}>Change Password</div>
+        <Inp label="Current Password" type="password" value={f.current} onChange={e=>s("current",e.target.value)} placeholder="••••••••"/>
+        <Inp label="New Password" type="password" value={f.next} onChange={e=>s("next",e.target.value)} placeholder="Min 8 characters"/>
+        <Inp label="Confirm New Password" type="password" value={f.confirm} onChange={e=>s("confirm",e.target.value)} placeholder="••••••••"/>
+        {[vNext,mismatch].filter(Boolean).map(m=>(
+          <div key={m} style={{background:`${T.danger}0D`,color:T.danger,borderRadius:9,padding:"8px 12px",fontSize:12,marginBottom:8,border:`1px solid ${T.danger}25`}}>{m}</div>
+        ))}
+        {e2&&<div style={{background:`${T.danger}12`,color:T.danger,borderRadius:10,padding:"10px 14px",fontSize:13,marginBottom:12,border:`1px solid ${T.danger}30`}}>{e2}</div>}
+        {done&&<div style={{background:`${T.success}12`,color:T.success,borderRadius:10,padding:"10px 14px",fontSize:13,marginBottom:12,border:`1px solid ${T.success}30`}}>✓ {done}</div>}
+        <Btn full onClick={save} disabled={saving||!f.current||!f.next||!f.confirm||Boolean(vNext||mismatch)} style={{padding:"11px",marginTop:4}}>{saving?"Updating…":"Update Password"}</Btn>
+      </Crd>
+    );
+  };
+
   const nav=[
     {id:"dashboard",label:"Dashboard",  icon:"⊞"},
     {id:"classes",  label:"My Classes", icon:"▦"},
@@ -2743,7 +3427,7 @@ const TeacherPortal=({user,db,onLogout,onReload})=>{
         <div style={{animation:"fadeUp .35s"}}>
           <div style={{marginBottom:22}}>
             <div style={{fontSize:10,fontWeight:700,color:T.muted,letterSpacing:"1.8px",textTransform:"uppercase",marginBottom:5}}>Welcome back</div>
-            <h1 style={{fontFamily:"Georgia,serif",fontSize:32,fontWeight:800,color:T.ink}}>Good morning, <em style={{color:T.green,fontStyle:"italic"}}>{teacher.name}!</em></h1>
+            <h1 style={{fontFamily:"Georgia,serif",fontSize:32,fontWeight:800,color:T.ink}}>{greeting()}, <em style={{color:T.green,fontStyle:"italic"}}>{teacher.name}!</em></h1>
             <p style={{color:T.muted,fontSize:14,marginTop:5}}>You teach {teacher.subject} across {teacher.classes.length} classes.</p>
           </div>
           <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:14,marginBottom:22}}>
@@ -2756,7 +3440,7 @@ const TeacherPortal=({user,db,onLogout,onReload})=>{
             <Crd style={{padding:"24px"}}>
               <div style={{fontSize:14,fontWeight:700,color:T.ink,marginBottom:16}}>My Students — {teacher.subject}</div>
               {myStudents.map(s=>{
-                const sub=s.subjects.find(x=>x.teacher===teacher.name);
+                const sub=mySubjectOf(s);
                 return sub?(
                   <div key={s.id} style={{display:"flex",gap:12,alignItems:"center",padding:"11px 0",borderBottom:`1px solid ${T.border}`}}>
                     <Av name={s.name} size={36} bg={`${T.forest}15`} color={T.forest} fs={12}/>
@@ -2775,17 +3459,31 @@ const TeacherPortal=({user,db,onLogout,onReload})=>{
                 <div style={{fontSize:14,fontWeight:700,color:T.ink}}>Quick Grade Entry</div>
                 <Btn onClick={()=>setModal("assessment")} style={{padding:"7px 14px",fontSize:12}}>+ Assessment</Btn>
               </div>
+              {!myStudents.some(mySubjectOf)&&(
+                <div style={{fontSize:12.5,color:T.muted,padding:"10px 0",lineHeight:1.6}}>
+                  No students are enrolled in the subjects you teach yet.
+                </div>
+              )}
               {myStudents.map(s=>{
-                const sub=s.subjects.find(x=>x.teacher===teacher.name);
-                return sub?(
+                const sub=mySubjectOf(s);
+                if(!sub)return null;
+                const key=sub.enrollmentId;
+                return(
                   <div key={s.id} style={{display:"flex",gap:10,alignItems:"center",padding:"9px 0",borderBottom:`1px solid ${T.border}`}}>
                     <span style={{fontSize:12,color:T.muted,flex:1}}>{s.name}</span>
-                    <input defaultValue={sub.score} style={{width:58,padding:"5px 8px",borderRadius:8,border:`1px solid ${T.border}`,fontSize:13,textAlign:"center",color:T.ink,background:T.paper,outline:"none"}}/>
+                    <input type="number" min="0" max="100"
+                      value={quickScores[key]??String(sub.score)}
+                      onChange={e=>setQuickScores(v=>({...v,[key]:e.target.value}))}
+                      style={{width:58,padding:"5px 8px",borderRadius:8,border:`1px solid ${T.border}`,fontSize:13,textAlign:"center",color:T.ink,background:T.paper,outline:"none"}}/>
                     <span style={{fontSize:11,color:T.muted}}>/ 100</span>
-                    <Btn style={{padding:"5px 10px",fontSize:11}}>Save</Btn>
+                    <Btn onClick={()=>saveQuickScore(sub,s)} disabled={!key||quickBusy===key||(quickScores[key]??String(sub.score))===String(sub.score)}
+                      style={{padding:"5px 10px",fontSize:11}}>
+                      {quickBusy===key?"…":"Save"}
+                    </Btn>
                   </div>
-                ):null;
+                );
               })}
+              {quickMsg&&<div style={{fontSize:12,color:quickMsg.bad?T.danger:T.success,marginTop:10,fontWeight:600}}>{quickMsg.text}</div>}
             </Crd>
             <div style={{display:"flex",flexDirection:"column",gap:14}}>
               <Crd style={{padding:"22px"}}>
@@ -2895,31 +3593,7 @@ const TeacherPortal=({user,db,onLogout,onReload})=>{
           </div>
         </div>
       )}
-      {tab==="gradebook"&&(
-        <div style={{animation:"fadeUp .35s"}}>
-          <SecHead pre="Academic" title={`Grade Book — ${teacher.subject}`} action={<Btn onClick={()=>setModal("assessment")} style={{marginBottom:4}}>+ Add Assessment</Btn>}/>
-          <Crd style={{padding:"26px"}}>
-            <table style={{width:"100%",borderCollapse:"collapse"}}>
-              <thead><tr>{["Student","Quiz 1","Quiz 2","Test 1","Test 2","Project","Avg.","Grade","Trend"].map(h=><th key={h} style={{textAlign:"left",padding:"9px 12px",fontSize:11,color:T.muted,fontWeight:700,textTransform:"uppercase",letterSpacing:".7px",borderBottom:`2px solid ${T.border}`}}>{h}</th>)}</tr></thead>
-              <tbody>{myStudents.map(s=>{
-                const sub=s.subjects.find(x=>x.teacher===teacher.name);
-                if(!sub) return null;
-                const scores=[sub.prev-2,sub.prev,sub.prev+3,sub.score-2,sub.score];
-                const avg=Math.round(scores.reduce((a,b)=>a+b)/scores.length);
-                return(
-                  <tr key={s.id} style={{borderBottom:`1px solid ${T.border}`}}>
-                    <td style={{padding:"12px"}}><div style={{display:"flex",gap:8,alignItems:"center"}}><Av name={s.name} size={28} bg={`${T.purple}18`} color={T.purple} fs={10}/><span style={{fontSize:13,color:T.ink,fontWeight:600}}>{s.name}</span></div></td>
-                    {scores.map((sc,j)=><td key={j} style={{padding:"12px",fontSize:13,color:sc>=80?T.success:sc>=60?T.warning:T.danger,fontWeight:600}}>{sc}</td>)}
-                    <td style={{padding:"12px",fontSize:15,fontWeight:800,color:T.ink,fontFamily:"Georgia,serif"}}>{avg}%</td>
-                    <td style={{padding:"12px"}}><Bdg label={sub.grade} color={gc(sub.grade)} bg={`${gc(sub.grade)}15`}/></td>
-                    <td style={{padding:"12px",fontSize:16,color:sub.pred>sub.score?T.success:T.danger}}>{sub.pred>sub.score?"↑":"↓"}</td>
-                  </tr>
-                );
-              })}</tbody>
-            </table>
-          </Crd>
-        </div>
-      )}
+      {tab==="gradebook"&&<GradeBookTab/>}
       {tab==="attendance"&&<AttendanceRegister/>}
       {tab==="messages"&&(
         <div style={{animation:"fadeUp .35s"}}>
@@ -2931,8 +3605,9 @@ const TeacherPortal=({user,db,onLogout,onReload})=>{
                 <Bdg label={`${msgs.filter(m=>m.unread).length} new`} color={T.clay} bg={`${T.clay}15`}/>
               </div>
               <div style={{flex:1,overflowY:"auto"}}>
+                {!msgs.length&&<div style={{padding:"18px 16px",fontSize:12.5,color:T.muted,lineHeight:1.6}}>No messages yet.</div>}
                 {msgs.map(m=>(
-                  <div key={m.id} onClick={()=>setSelMsg(m)} style={{padding:"13px 16px",cursor:"pointer",borderBottom:`1px solid ${T.border}`,background:selMsg?.id===m.id?`${T.forest}09`:"transparent",borderLeft:`3px solid ${selMsg?.id===m.id?T.forest:"transparent"}`,transition:"background .15s"}}>
+                  <div key={m.id} onClick={()=>openMessage(m)} style={{padding:"13px 16px",cursor:"pointer",borderBottom:`1px solid ${T.border}`,background:selMsg?.id===m.id?`${T.forest}09`:"transparent",borderLeft:`3px solid ${selMsg?.id===m.id?T.forest:"transparent"}`,transition:"background .15s"}}>
                     <div style={{display:"flex",gap:8,alignItems:"flex-start"}}>
                       <Av name={m.from} size={30} bg={T.paper} color={T.forest} fs={10}/>
                       <div style={{flex:1,minWidth:0}}>
@@ -2955,9 +3630,10 @@ const TeacherPortal=({user,db,onLogout,onReload})=>{
                   <div style={{flex:1,padding:"26px",overflowY:"auto"}}>
                     <div style={{background:T.paper,borderRadius:14,padding:"20px 24px",maxWidth:560,fontSize:14,color:T.ink,lineHeight:1.85,border:`1px solid ${T.border}`}}>{selMsg.body}</div>
                   </div>
+                  {replySent&&<div style={{background:`${T.success}12`,color:T.success,padding:"10px 26px",fontSize:13,fontWeight:600,border:`1px solid ${T.success}30`}}>{replySent}</div>}
                   <div style={{padding:"16px 26px",borderTop:`1px solid ${T.border}`,display:"flex",gap:10}}>
-                    <input value={reply} onChange={e=>setReply(e.target.value)} onKeyDown={e=>e.key==="Enter"&&setReply("")} placeholder={`Reply to ${selMsg.from}…`} style={{flex:1,background:T.paper,border:`1.5px solid ${T.border}`,borderRadius:10,padding:"10px 16px",color:T.ink,fontSize:13,outline:"none"}}/>
-                    <Btn onClick={()=>setReply("")}>Send</Btn>
+                    <input value={reply} onChange={e=>setReply(e.target.value)} onKeyDown={e=>e.key==="Enter"&&sendReply()} placeholder={`Reply to ${selMsg.from}…`} style={{flex:1,background:T.paper,border:`1.5px solid ${T.border}`,borderRadius:10,padding:"10px 16px",color:T.ink,fontSize:13,outline:"none"}}/>
+                    <Btn onClick={sendReply} disabled={!reply.trim()||replyBusy}>{replyBusy?"Sending…":"Send"}</Btn>
                   </div>
                 </>
               ):(
@@ -3008,20 +3684,8 @@ const TeacherPortal=({user,db,onLogout,onReload})=>{
               </Crd>
             </div>
             <div style={{display:"flex",flexDirection:"column",gap:14}}>
-              <Crd style={{padding:"26px"}}>
-                <div style={{fontSize:14,fontWeight:700,color:T.ink,marginBottom:18}}>Edit Profile</div>
-                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
-                  <Inp label="Full Name" placeholder={teacher.name}/>
-                  <Inp label="Phone" placeholder={teacher.phone}/>
-                  <Inp label="Email" placeholder={teacher.email} type="email" style={{gridColumn:"1/-1"}}/>
-                </div>
-                <Btn full style={{padding:"11px",marginTop:4}}>Update Profile</Btn>
-              </Crd>
-              <Crd style={{padding:"26px"}}>
-                <div style={{fontSize:14,fontWeight:700,color:T.ink,marginBottom:18}}>Change Password</div>
-                {["Current Password","New Password","Confirm New Password"].map(l=><Inp key={l} label={l} type="password" placeholder="••••••••"/>)}
-                <Btn full style={{padding:"11px",marginTop:4}}>Update Password</Btn>
-              </Crd>
+              <EditProfileCard/>
+              <ChangePasswordCard/>
             </div>
           </div>
         </div>
@@ -3034,8 +3698,10 @@ const TeacherPortal=({user,db,onLogout,onReload})=>{
 // ═══════════════════════════════════════════════════════════════════
 // PARENT PORTAL — FULL FEATURED
 // ═══════════════════════════════════════════════════════════════════
+const PARENT_TABS=["dashboard","attendance","grades","ai","messages","fees","timetable","notices","profile"];
+
 const ParentPortal=({user,db,onLogout,onReload})=>{
-  const[tab,setTab]=useState("dashboard");
+  const[tab,setTab]=useHashTab("dashboard",PARENT_TABS);
   const[col,setCol]=useState(false);
   const[selMsg,setSelMsg]=useState(db.messages[0]);
   const[msgs,setMsgs]=useState(db.messages);
@@ -3082,6 +3748,70 @@ const ParentPortal=({user,db,onLogout,onReload})=>{
     }
   };
 
+  /**
+   * Compose a new message. The recipient list comes from GET /messages/contacts
+   * — the staff this guardian is actually allowed to write to. Previously this
+   * form's fields were placeholder-only and "Send Message" just closed the
+   * card, so nothing was ever sent.
+   */
+  const ComposeCard=()=>{
+    const[contacts,setContacts]=useState(null);
+    const[f,setF]=useState({to:"",subject:"",body:""});
+    const s=(k,v)=>setF(x=>({...x,[k]:v}));
+    const[sending,setSending]=useState(false);
+    const[e2,setE2]=useState("");
+
+    useEffect(()=>{
+      let cancelled=false;
+      api.messages.contacts()
+        .then(r=>{if(!cancelled)setContacts(r);})
+        .catch(x=>{if(!cancelled)setE2(x.message||"Couldn't load your contacts.");});
+      return()=>{cancelled=true;};
+    },[]);
+
+    const send=async()=>{
+      setSending(true);setE2("");
+      try{
+        await api.messages.send({
+          recipientId:f.to,
+          subject:f.subject.trim(),
+          body:f.body.trim(),
+          ...(student?.id&&{studentId:student.id}),
+        });
+        setCompose(false);
+        setSent(true);
+        setTimeout(()=>setSent(false),2500);
+        onReload?.();
+      }catch(x){
+        setE2(x.errors?.[0]?.message||x.message||"Could not send the message.");
+      }finally{
+        setSending(false);
+      }
+    };
+
+    return(
+      <Crd style={{padding:"24px",marginBottom:18,border:`1.5px solid ${T.forest}44`,animation:"fadeUp .3s"}}>
+        <div style={{display:"flex",justifyContent:"space-between",marginBottom:16}}><div style={{fontSize:14,fontWeight:700,color:T.ink}}>New Message</div><span onClick={()=>setCompose(false)} style={{cursor:"pointer",color:T.muted,fontSize:22}}>×</span></div>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
+          <Sel label="To (Teacher / Admin)"
+            options={[{v:"",l:contacts?(contacts.length?"Choose a recipient…":"No contacts available"):"Loading…"},
+              ...(contacts??[]).map(c=>({v:c.id,l:`${c.name}${c.role?` — ${c.role.toLowerCase()}`:""}`}))]}
+            value={f.to} onChange={e=>s("to",e.target.value)}/>
+          <Inp label="Subject" value={f.subject} onChange={e=>s("subject",e.target.value)} placeholder="Subject of message"/>
+        </div>
+        <div style={{marginBottom:14}}>
+          <div style={{fontSize:11,fontWeight:700,color:T.muted,marginBottom:6,textTransform:"uppercase",letterSpacing:".6px"}}>Message</div>
+          <textarea rows={4} value={f.body} onChange={e=>s("body",e.target.value)} placeholder="Write your message here…" style={{width:"100%",padding:"10px 14px",borderRadius:10,border:`1.5px solid ${T.border}`,fontSize:13,color:T.ink,background:T.paper,resize:"none",outline:"none",fontFamily:"inherit"}}/>
+        </div>
+        {e2&&<div style={{background:`${T.danger}12`,color:T.danger,borderRadius:10,padding:"10px 14px",fontSize:13,marginBottom:12,border:`1px solid ${T.danger}30`}}>{e2}</div>}
+        <div style={{display:"flex",gap:10}}>
+          <Btn onClick={()=>setCompose(false)} out color={T.muted} style={{flex:1,padding:"11px"}}>Cancel</Btn>
+          <Btn onClick={send} style={{flex:2,padding:"11px"}} disabled={!f.to||!f.subject.trim()||!f.body.trim()||sending}>{sending?"Sending…":"Send Message"}</Btn>
+        </div>
+      </Crd>
+    );
+  };
+
   return(
     <Shell nav={nav} tab={tab} setTab={setTab} user={user} inst={inst} collapsed={col} setCollapsed={setCol} onLogout={onLogout}>
       {/* DASHBOARD */}
@@ -3089,7 +3819,7 @@ const ParentPortal=({user,db,onLogout,onReload})=>{
         <div style={{animation:"fadeUp .35s"}}>
           <div style={{marginBottom:24}}>
             <div style={{fontSize:10,fontWeight:700,color:T.muted,letterSpacing:"1.8px",textTransform:"uppercase",marginBottom:5}}>{new Date().toLocaleDateString(undefined,{weekday:"long",month:"long",day:"numeric",year:"numeric"})}</div>
-            <h1 style={{fontFamily:"Georgia,serif",fontSize:34,fontWeight:800,color:T.ink}}>Good morning, <em style={{color:T.green,fontStyle:"italic"}}>{parent?.name.split(" ")[0]}.</em></h1>
+            <h1 style={{fontFamily:"Georgia,serif",fontSize:34,fontWeight:800,color:T.ink}}>{greeting()}, <em style={{color:T.green,fontStyle:"italic"}}>{parent?.name.split(" ")[0]}.</em></h1>
             <p style={{color:T.muted,fontSize:14,marginTop:5}}>Here's everything about <b>{student.name}</b>'s academic journey.</p>
           </div>
           <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:14,marginBottom:20}}>
@@ -3195,18 +3925,31 @@ const ParentPortal=({user,db,onLogout,onReload})=>{
           <div style={{display:"grid",gridTemplateColumns:"1fr 280px",gap:18}}>
             <div style={{display:"flex",flexDirection:"column",gap:16}}>
               <Crd style={{padding:"26px"}}>
-                <div style={{fontSize:14,fontWeight:700,color:T.ink,marginBottom:16}}>Monthly Attendance 2025–26</div>
-                <div style={{display:"flex",alignItems:"flex-end",gap:5,height:90,marginBottom:4}}>
-                  {student.monthlyAtt.map((v,i)=>(
-                    <div key={i} style={{flex:1,display:"flex",flexDirection:"column",alignItems:"center",gap:3}}>
-                      <div style={{fontSize:8,color:T.muted,fontWeight:600}}>{v}</div>
-                      <div style={{width:"100%",borderRadius:"3px 3px 0 0",background:i===2?G(T.mint,T.forest,"180deg"):T.border,height:`${(v/22)*65}px`,transition:`height 1s ${i*55}ms`}}/>
-                      <span style={{fontSize:8,color:T.muted}}>{months[i]}</span>
+                <div style={{fontSize:14,fontWeight:700,color:T.ink,marginBottom:16}}>Attendance — last 12 months</div>
+                {/* Bars scale to the busiest month in the series rather than an
+                    assumed 22-day month, and each is labelled from its own
+                    period — the labels used to be a fixed Jan…Dec list. */}
+                {(()=>{
+                  const peak=Math.max(1,...student.monthlyAtt.map(m=>m.present));
+                  const lastIdx=student.monthlyAtt.length-1;
+                  return(
+                    <div style={{display:"flex",alignItems:"flex-end",gap:5,height:90,marginBottom:4}}>
+                      {student.monthlyAtt.map((m,i)=>(
+                        <div key={`${m.year}-${m.label}`} style={{flex:1,display:"flex",flexDirection:"column",alignItems:"center",gap:3}}>
+                          <div style={{fontSize:8,color:T.muted,fontWeight:600}}>{m.present}</div>
+                          <div title={`${m.label} ${m.year}: ${m.present} of ${m.total} days`}
+                            style={{width:"100%",borderRadius:"3px 3px 0 0",background:i===lastIdx?G(T.mint,T.forest,"180deg"):T.border,height:`${(m.present/peak)*65}px`,transition:`height 1s ${i*55}ms`}}/>
+                          <span style={{fontSize:8,color:T.muted}}>{m.label}</span>
+                        </div>
+                      ))}
                     </div>
-                  ))}
-                </div>
+                  );
+                })()}
+                {/* Real day counts, not the fixed 87/8/5/2/100/87% row. */}
                 <div style={{display:"grid",gridTemplateColumns:"repeat(6,1fr)",gap:8,marginTop:18}}>
-                  {[["87","Present",T.forest],["8","Absent",T.danger],["5","Late",T.warning],["2","Leave",T.muted],["100","Total",T.ink],["87%","Rate",T.success]].map(([v,l,c])=>(
+                  {[[student.att.counts.present,"Present",T.forest],[student.att.counts.absent,"Absent",T.danger],
+                    [student.att.counts.late,"Late",T.warning],[student.att.counts.leave,"Leave",T.muted],
+                    [student.att.counts.total,"Total",T.ink],[`${student.att.rate}%`,"Rate",T.success]].map(([v,l,c])=>(
                     <div key={l} style={{padding:"10px 6px",background:T.paper,borderRadius:10,textAlign:"center"}}>
                       <div style={{fontFamily:"Georgia,serif",fontSize:18,fontWeight:800,color:c}}>{v}</div>
                       <div style={{fontSize:9,color:T.muted,marginTop:2}}>{l}</div>
@@ -3215,7 +3958,7 @@ const ParentPortal=({user,db,onLogout,onReload})=>{
                 </div>
               </Crd>
               <Crd style={{padding:"24px"}}>
-                <div style={{fontSize:13,fontWeight:700,color:T.ink,marginBottom:16}}>This Week — Mar 8–12</div>
+                <div style={{fontSize:13,fontWeight:700,color:T.ink,marginBottom:16}}>Most Recent Days</div>
                 <div style={{display:"flex",gap:12}}>
                   {student.weekAtt.map((w,i)=>{
                     const c=w.s==="present"?T.success:w.s==="absent"?T.danger:T.warning;
@@ -3234,27 +3977,55 @@ const ParentPortal=({user,db,onLogout,onReload})=>{
               </Crd>
             </div>
             <div style={{display:"flex",flexDirection:"column",gap:14}}>
-              <Crd style={{padding:"22px",border:`1.5px solid ${T.gold}44`}}>
-                <div style={{fontSize:10,fontWeight:700,color:T.gold,letterSpacing:"1.5px",textTransform:"uppercase",marginBottom:10}}>✦ AI Insight</div>
-                <div style={{fontFamily:"Georgia,serif",fontSize:15,fontWeight:700,color:T.ink,marginBottom:8,lineHeight:1.3}}>Irregular Thursday arrivals detected</div>
-                <p style={{fontSize:12,color:T.muted,lineHeight:1.7}}>Recurring late pattern on Thursdays. Departing 15 min earlier could resolve this and prevent grade impact.</p>
-              </Crd>
+              {/* The insight engine's own attendance findings, if it raised
+                  any. This card used to assert a fixed "Irregular Thursday
+                  arrivals" pattern for every student. */}
+              {(()=>{
+                const attInsight=(student.aiRecs??[]).find(r=>r.type==="ATTENDANCE");
+                return(
+                  <Crd style={{padding:"22px",border:`1.5px solid ${T.gold}44`}}>
+                    <div style={{fontSize:10,fontWeight:700,color:T.gold,letterSpacing:"1.5px",textTransform:"uppercase",marginBottom:10}}>✦ AI Insight</div>
+                    {attInsight?(
+                      <>
+                        <div style={{fontFamily:"Georgia,serif",fontSize:15,fontWeight:700,color:T.ink,marginBottom:8,lineHeight:1.3}}>{attInsight.sub}</div>
+                        <p style={{fontSize:12,color:T.muted,lineHeight:1.7}}>{attInsight.tip}</p>
+                      </>
+                    ):(
+                      <p style={{fontSize:12,color:T.muted,lineHeight:1.7}}>
+                        No attendance concerns flagged for {student.name}.
+                      </p>
+                    )}
+                  </Crd>
+                );
+              })()}
               <Crd style={{padding:"22px"}}>
                 <div style={{fontSize:13,fontWeight:700,color:T.ink,marginBottom:14}}>vs. Target</div>
-                {[["Current",student.att.present,T.success],["Target",95,T.forest],["Minimum",75,T.muted]].map(([l,v,c])=>(
+                {[["Current",student.att.rate,T.success],["Target",95,T.forest],["Minimum",75,T.muted]].map(([l,v,c])=>(
                   <div key={l} style={{marginBottom:13}}>
                     <div style={{display:"flex",justifyContent:"space-between",marginBottom:5}}><span style={{fontSize:12,color:T.muted}}>{l}</span><span style={{fontSize:12,fontWeight:700,color:c}}>{v}%</span></div>
                     <Bar val={v} color={c}/>
                   </div>
                 ))}
               </Crd>
+              {/* Derived from the attendance record actually held for this
+                  student. Every figure here was previously a literal. */}
               <Crd style={{padding:"22px"}}>
                 <div style={{fontSize:13,fontWeight:700,color:T.ink,marginBottom:12}}>Quick Stats</div>
-                {[["Consecutive present days","12"],["Best month","Sep (22 days)"],["Punctuality rate","94%"],["Medical leaves","2"]].map(([l,v])=>(
-                  <div key={l} style={{display:"flex",justifyContent:"space-between",padding:"8px 0",borderBottom:`1px solid ${T.border}`}}>
-                    <span style={{fontSize:12,color:T.muted}}>{l}</span><span style={{fontSize:12,fontWeight:700,color:T.ink}}>{v}</span>
-                  </div>
-                ))}
+                {(()=>{
+                  const best=[...student.monthlyAtt].sort((a,b)=>b.present-a.present)[0];
+                  const c=student.att.counts;
+                  const punctual=c.total?Math.round((c.present/c.total)*100):0;
+                  return[
+                    ["Days recorded",String(c.total)],
+                    ["Best month",best&&best.present?`${best.label} (${best.present} days)`:"—"],
+                    ["On-time rate",`${punctual}%`],
+                    ["Leave days",String(c.leave)],
+                  ].map(([l,v])=>(
+                    <div key={l} style={{display:"flex",justifyContent:"space-between",padding:"8px 0",borderBottom:`1px solid ${T.border}`}}>
+                      <span style={{fontSize:12,color:T.muted}}>{l}</span><span style={{fontSize:12,fontWeight:700,color:T.ink}}>{v}</span>
+                    </div>
+                  ));
+                })()}
               </Crd>
             </div>
           </div>
@@ -3296,10 +4067,14 @@ const ParentPortal=({user,db,onLogout,onReload})=>{
             <div style={{display:"flex",flexDirection:"column",gap:14}}>
               <Crd style={{padding:"26px",background:G(T.forest,T.green),border:"none"}}>
                 <div style={{fontSize:10,color:"rgba(255,255,255,.5)",fontWeight:700,letterSpacing:"1.5px",textTransform:"uppercase",marginBottom:5}}>Current GPA</div>
+                {/* Standing and progress read from the real rank and GPA; this
+                    claimed "Top 10% of class" and a fixed 82% bar for everyone. */}
                 <div style={{fontFamily:"Georgia,serif",fontSize:52,fontWeight:800,color:"#fff",lineHeight:1}}>{student.gpa}</div>
-                <div style={{fontSize:13,color:"rgba(255,255,255,.6)",marginTop:8}}>Semester · Top 10% of class</div>
-                <div style={{marginTop:14,height:4,background:"rgba(255,255,255,.15)",borderRadius:99,overflow:"hidden"}}><div style={{height:"100%",width:"82%",background:T.mint,borderRadius:99}}/></div>
-                <div style={{fontSize:11,color:"rgba(255,255,255,.4)",marginTop:4}}>82% toward 4.0 GPA</div>
+                <div style={{fontSize:13,color:"rgba(255,255,255,.6)",marginTop:8}}>
+                  {student.rank&&student.classSize?`Ranked #${student.rank} of ${student.classSize} in class`:"Class rank not available yet"}
+                </div>
+                <div style={{marginTop:14,height:4,background:"rgba(255,255,255,.15)",borderRadius:99,overflow:"hidden"}}><div style={{height:"100%",width:`${Math.min(100,Math.round((student.gpa/4)*100))}%`,background:T.mint,borderRadius:99}}/></div>
+                <div style={{fontSize:11,color:"rgba(255,255,255,.4)",marginTop:4}}>{Math.min(100,Math.round((student.gpa/4)*100))}% toward 4.0 GPA</div>
               </Crd>
               <Crd style={{padding:"22px"}}>
                 <div style={{fontSize:13,fontWeight:700,color:T.ink,marginBottom:12}}>All Assessments</div>
@@ -3322,16 +4097,40 @@ const ParentPortal=({user,db,onLogout,onReload})=>{
             <div style={{position:"absolute",top:-50,right:-50,width:200,height:200,borderRadius:"50%",background:T.gold,opacity:.05}}/>
             <div style={{position:"absolute",bottom:-40,left:100,width:180,height:180,borderRadius:"50%",background:T.mint,opacity:.05}}/>
             <div style={{display:"flex",gap:8,alignItems:"center",marginBottom:12}}><span style={{color:T.gold,animation:"shimmer 2s infinite",fontSize:18}}>✦</span><span style={{fontSize:10,fontWeight:700,color:T.gold,letterSpacing:"2px",textTransform:"uppercase"}}>AI Academic Intelligence Engine</span></div>
-            <h2 style={{fontFamily:"Georgia,serif",fontSize:26,fontWeight:800,color:"#fff",marginBottom:10,lineHeight:1.2,maxWidth:560}}>{student.name} is projected to reach <em style={{color:T.mint}}>85%</em> overall by semester end</h2>
-            <p style={{fontSize:14,color:"rgba(255,255,255,.5)",lineHeight:1.8,maxWidth:500,marginBottom:24}}>Analysis of 6 subjects, attendance data, and historical patterns. Model confidence: 78%.</p>
-            <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:14}}>
-              {[["82 / 100","AI Performance Score",T.gold],["Low Risk","Academic Risk Level",T.mint],["#3 Predicted","End-of-Semester Rank","#fff"]].map(([v,l,c])=>(
-                <div key={l} style={{padding:"18px",background:"rgba(255,255,255,.07)",borderRadius:14,border:"1px solid rgba(255,255,255,.08)"}}>
-                  <div style={{fontFamily:"Georgia,serif",fontSize:24,fontWeight:800,color:c,marginBottom:5}}>{v}</div>
-                  <div style={{fontSize:12,color:"rgba(255,255,255,.4)"}}>{l}</div>
-                </div>
-              ))}
-            </div>
+            {/* Every figure below comes from the insight engine's own output:
+                the projection is the mean of its per-subject predicted scores,
+                the score and risk label are what it computed. This block used
+                to state a flat 85% projection, "6 subjects", a 78% model
+                confidence and an 82/100 score for every student alike. */}
+            {(()=>{
+              const subs=student.subjects;
+              const mean=a=>a.length?Math.round(a.reduce((x,y)=>x+y,0)/a.length):0;
+              const projected=mean(subs.map(s=>s.pred));
+              return(
+                <>
+                  <h2 style={{fontFamily:"Georgia,serif",fontSize:26,fontWeight:800,color:"#fff",marginBottom:10,lineHeight:1.2,maxWidth:560}}>
+                    {subs.length
+                      ?<>{student.name} is projected to average <em style={{color:T.mint}}>{projected}%</em> across their subjects</>
+                      :<>No subject data recorded for {student.name} yet</>}
+                  </h2>
+                  <p style={{fontSize:14,color:"rgba(255,255,255,.5)",lineHeight:1.8,maxWidth:500,marginBottom:24}}>
+                    {subs.length
+                      ? `Based on ${subs.length} subject${subs.length===1?"":"s"} and ${student.att.days} day${student.att.days===1?"":"s"} of attendance.`
+                      : "Once marks and attendance are recorded, predictions appear here."}
+                  </p>
+                  <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:14}}>
+                    {[[`${student.aiScore} / 100`,"AI Performance Score",T.gold],
+                      [student.aiScoreLabel,"Academic Standing",T.mint],
+                      [student.rank?`#${student.rank} of ${student.classSize}`:"—","Current Class Rank","#fff"]].map(([v,l,c])=>(
+                      <div key={l} style={{padding:"18px",background:"rgba(255,255,255,.07)",borderRadius:14,border:"1px solid rgba(255,255,255,.08)"}}>
+                        <div style={{fontFamily:"Georgia,serif",fontSize:24,fontWeight:800,color:c,marginBottom:5}}>{v}</div>
+                        <div style={{fontSize:12,color:"rgba(255,255,255,.4)"}}>{l}</div>
+                      </div>
+                    ))}
+                  </div>
+                </>
+              );
+            })()}
           </Crd>
           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:18}}>
             <Crd style={{padding:"24px"}}>
@@ -3355,28 +4154,54 @@ const ParentPortal=({user,db,onLogout,onReload})=>{
                   </div>
                 ))}
               </Crd>
-              <Crd style={{padding:"24px",border:`1.5px solid ${T.clay}44`,background:`linear-gradient(135deg,#fff,${T.clay}05)`}}>
-                <div style={{fontSize:10,fontWeight:700,color:T.clay,letterSpacing:"1.5px",textTransform:"uppercase",marginBottom:10}}>⚠ Attendance Impact</div>
-                <div style={{fontFamily:"Georgia,serif",fontSize:16,fontWeight:700,color:T.ink,marginBottom:8,lineHeight:1.3}}>Low attendance affecting Chemistry</div>
-                <p style={{fontSize:13,color:T.muted,lineHeight:1.7}}>Reaching 95% attendance could recover up to 6 marks in Chemistry based on historical performance data.</p>
-              </Crd>
-              <Crd style={{padding:"24px"}}>
-                <div style={{fontSize:13,fontWeight:700,color:T.ink,marginBottom:12}}>Overall Performance Trend</div>
-                <div style={{display:"flex",alignItems:"center",gap:16}}>
-                  <svg width={140} height={50} style={{overflow:"visible"}}>
-                    {[72,75,78,80,81,83,82,85].map((v,i,arr)=>{
-                      const x=i/(arr.length-1)*140, y=50-(v-70)/(90-70)*50;
-                      return i===0?null:<line key={i} x1={(i-1)/(arr.length-1)*140} y1={50-(arr[i-1]-70)/(90-70)*50} x2={x} y2={y} stroke={T.forest} strokeWidth="2.5" strokeLinecap="round"/>;
-                    })}
-                    <circle cx={140} cy={50-(85-70)/(90-70)*50} r="5" fill={T.forest}/>
-                  </svg>
-                  <div>
-                    <div style={{fontFamily:"Georgia,serif",fontSize:24,fontWeight:800,color:T.forest}}>+13%</div>
-                    <div style={{fontSize:12,color:T.muted}}>Overall since Sept</div>
-                    <div style={{fontSize:11,color:T.success,marginTop:4,fontWeight:600}}>↑ Positive trajectory</div>
-                  </div>
-                </div>
-              </Crd>
+              {/* Shown only when the engine actually raised an attendance
+                  finding — this was a fixed "Chemistry" claim before. */}
+              {(()=>{
+                const att=(student.aiRecs??[]).find(r=>r.type==="ATTENDANCE");
+                if(!att)return null;
+                return(
+                  <Crd style={{padding:"24px",border:`1.5px solid ${T.clay}44`,background:`linear-gradient(135deg,#fff,${T.clay}05)`}}>
+                    <div style={{fontSize:10,fontWeight:700,color:T.clay,letterSpacing:"1.5px",textTransform:"uppercase",marginBottom:10}}>⚠ Attendance Impact</div>
+                    <div style={{fontFamily:"Georgia,serif",fontSize:16,fontWeight:700,color:T.ink,marginBottom:8,lineHeight:1.3}}>{att.sub}</div>
+                    <p style={{fontSize:13,color:T.muted,lineHeight:1.7}}>{att.tip}</p>
+                  </Crd>
+                );
+              })()}
+              {/* Previous vs current subject average — the two figures the API
+                  actually stores per enrolment. The old chart drew a fixed
+                  eight-point line and a literal "+13% since Sept". */}
+              {(()=>{
+                const subs=student.subjects;
+                if(!subs.length)return null;
+                const mean=a=>a.length?Math.round(a.reduce((x,y)=>x+y,0)/a.length):0;
+                const prev=mean(subs.map(s=>s.prev)),cur=mean(subs.map(s=>s.score));
+                const delta=cur-prev;
+                const col=delta>0?T.success:delta<0?T.danger:T.muted;
+                return(
+                  <Crd style={{padding:"24px"}}>
+                    <div style={{fontSize:13,fontWeight:700,color:T.ink,marginBottom:4}}>Overall Performance Trend</div>
+                    <div style={{fontSize:11.5,color:T.muted,marginBottom:14}}>Average across all subjects, previous assessment vs current.</div>
+                    <div style={{display:"flex",alignItems:"center",gap:20}}>
+                      <div style={{display:"flex",alignItems:"flex-end",gap:14}}>
+                        {[["Previous",prev,T.border],["Current",cur,T.forest]].map(([l,v,c])=>(
+                          <div key={l} style={{textAlign:"center"}}>
+                            <div style={{fontSize:10,color:T.muted,marginBottom:4}}>{v}%</div>
+                            <div style={{width:34,height:Math.max(4,(v/100)*60),background:c,borderRadius:"4px 4px 0 0"}}/>
+                            <div style={{fontSize:10,color:T.muted,marginTop:5}}>{l}</div>
+                          </div>
+                        ))}
+                      </div>
+                      <div>
+                        <div style={{fontFamily:"Georgia,serif",fontSize:24,fontWeight:800,color:col}}>{delta>0?"+":""}{delta}%</div>
+                        <div style={{fontSize:12,color:T.muted}}>Change</div>
+                        <div style={{fontSize:11,color:col,marginTop:4,fontWeight:600}}>
+                          {delta>0?"↑ Improving":delta<0?"↓ Slipping":"→ Holding steady"}
+                        </div>
+                      </div>
+                    </div>
+                  </Crd>
+                );
+              })()}
             </div>
           </div>
         </div>
@@ -3385,23 +4210,7 @@ const ParentPortal=({user,db,onLogout,onReload})=>{
       {tab==="messages"&&(
         <div style={{animation:"fadeUp .35s"}}>
           <SecHead pre="Communication" title="Messages" action={<Btn onClick={()=>setCompose(true)} style={{marginBottom:4}}>+ Compose</Btn>}/>
-          {compose&&(
-            <Crd style={{padding:"24px",marginBottom:18,border:`1.5px solid ${T.forest}44`,animation:"fadeUp .3s"}}>
-              <div style={{display:"flex",justifyContent:"space-between",marginBottom:16}}><div style={{fontSize:14,fontWeight:700,color:T.ink}}>New Message</div><span onClick={()=>setCompose(false)} style={{cursor:"pointer",color:T.muted,fontSize:22}}>×</span></div>
-              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
-                <Inp label="To (Teacher / Admin)" placeholder="Ms. Nadia, Mr. Hassan…"/>
-                <Inp label="Subject" placeholder="Subject of message"/>
-              </div>
-              <div style={{marginBottom:14}}>
-                <div style={{fontSize:11,fontWeight:700,color:T.muted,marginBottom:6,textTransform:"uppercase",letterSpacing:".6px"}}>Message</div>
-                <textarea rows={4} placeholder="Write your message here…" style={{width:"100%",padding:"10px 14px",borderRadius:10,border:`1.5px solid ${T.border}`,fontSize:13,color:T.ink,background:T.paper,resize:"none",outline:"none"}}/>
-              </div>
-              <div style={{display:"flex",gap:10}}>
-                <Btn onClick={()=>setCompose(false)} out color={T.muted} style={{flex:1,padding:"11px"}}>Cancel</Btn>
-                <Btn onClick={()=>setCompose(false)} style={{flex:2,padding:"11px"}}>Send Message</Btn>
-              </div>
-            </Crd>
-          )}
+          {compose&&<ComposeCard/>}
           <div style={{display:"grid",gridTemplateColumns:"290px 1fr",gap:18,height:500}}>
             <Crd style={{overflow:"hidden",display:"flex",flexDirection:"column"}}>
               <div style={{padding:"14px 18px",borderBottom:`1px solid ${T.border}`,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
@@ -3459,43 +4268,82 @@ const ParentPortal=({user,db,onLogout,onReload})=>{
       {tab==="fees"&&(
         <div style={{animation:"fadeUp .35s"}}>
           <SecHead pre="Finance" title="Fee Management"/>
+          {/* Real invoice totals from the server. These were an assumed
+              Rs 1,50,000 a year and an invoice count times a literal 12,500,
+              so the figures matched no actual invoice. */}
           <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:14,marginBottom:20}}>
-            <KPI label="Annual Total" value="Rs. 1,50,000" color={T.ink} icon="◑" sub="4 terms"/>
-            <KPI label="Paid" value={`Rs. ${(student.fees.filter(f=>f.status==="paid").length*12500).toLocaleString()}`} color={T.success} icon="✓" sub={`${student.fees.filter(f=>f.status==="paid").length} months`}/>
-            <KPI label="Pending" value={`Rs. ${(student.fees.filter(f=>f.status==="pending").length*12500).toLocaleString()}`} color={T.warning} icon="⏳" sub={`${student.fees.filter(f=>f.status==="pending").length} months due`}/>
+            <KPI label="Invoiced" value={`Rs. ${(student.feeTotals.paid+student.feeTotals.outstanding).toLocaleString()}`} color={T.ink} icon="◑" sub={`${student.fees.length} invoice${student.fees.length===1?"":"s"}`}/>
+            <KPI label="Paid" value={`Rs. ${student.feeTotals.paid.toLocaleString()}`} color={T.success} icon="✓" sub={`${student.fees.filter(f=>f.status==="paid").length} settled`}/>
+            <KPI label="Outstanding" value={`Rs. ${student.feeTotals.outstanding.toLocaleString()}`} color={T.warning} icon="⏳" sub={`${student.fees.filter(f=>f.status!=="paid"&&f.status!=="waived").length} unpaid`}/>
           </div>
           <div style={{display:"grid",gridTemplateColumns:"1fr 300px",gap:18}}>
             <Crd style={{padding:"26px"}}>
               <div style={{fontSize:14,fontWeight:700,color:T.ink,marginBottom:18}}>Payment History</div>
               <table style={{width:"100%",borderCollapse:"collapse"}}>
                 <thead><tr>{["Month","Amount","Due Date","Paid On","Status"].map(h=><th key={h} style={{textAlign:"left",padding:"9px 12px",fontSize:11,color:T.muted,fontWeight:700,textTransform:"uppercase",letterSpacing:".7px",borderBottom:`2px solid ${T.border}`}}>{h}</th>)}</tr></thead>
-                <tbody>{student.fees.map((f,i)=>(
-                  <tr key={i} style={{borderBottom:`1px solid ${T.border}`}}>
+                <tbody>{!student.fees.length&&(
+                  <tr><td colSpan={5} style={{padding:"16px 12px",fontSize:13,color:T.muted}}>No invoices have been issued yet.</td></tr>
+                )}
+                {student.fees.map((f,i)=>{
+                  // Each invoice carries its own due date — the column was a
+                  // literal "20th" for every row regardless.
+                  const c=f.status==="paid"?T.success:f.status==="overdue"?T.danger:T.warning;
+                  return(
+                  <tr key={f.id??i} style={{borderBottom:`1px solid ${T.border}`}}>
                     <td style={{padding:"12px",fontSize:13,fontWeight:600,color:T.ink}}>{f.month}</td>
                     <td style={{padding:"12px",fontSize:13}}>Rs. {f.amt.toLocaleString()}</td>
-                    <td style={{padding:"12px",fontSize:13,color:T.muted}}>20th</td>
+                    <td style={{padding:"12px",fontSize:13,color:T.muted}}>{f.dueDate||"—"}</td>
                     <td style={{padding:"12px",fontSize:13,color:T.muted}}>{f.date||"—"}</td>
-                    <td style={{padding:"12px"}}><Bdg label={f.status==="paid"?"✓ Paid":"⏳ Pending"} color={f.status==="paid"?T.success:T.warning} bg={f.status==="paid"?`${T.success}15`:`${T.warning}15`}/></td>
+                    <td style={{padding:"12px"}}><Bdg label={f.status==="paid"?"✓ Paid":f.status==="overdue"?"⚠ Overdue":"⏳ Pending"} color={c} bg={`${c}15`}/></td>
                   </tr>
-                ))}</tbody>
+                );})}</tbody>
               </table>
             </Crd>
             <div style={{display:"flex",flexDirection:"column",gap:14}}>
-              <Crd style={{padding:"22px",border:`1.5px solid ${T.warning}55`,background:`linear-gradient(135deg,#fff,${T.warning}05)`}}>
-                <div style={{fontSize:10,fontWeight:700,color:T.warning,letterSpacing:"1.5px",textTransform:"uppercase",marginBottom:10}}>⚠ Payment Due</div>
-                <div style={{fontFamily:"Georgia,serif",fontSize:24,fontWeight:800,color:T.ink}}>Rs. 25,000</div>
-                <div style={{fontSize:12,color:T.muted,marginTop:4,marginBottom:16}}>March + April 2026<br/>Deadline: March 20, 2026</div>
-                <Btn full style={{marginBottom:8,padding:"11px"}}>Pay Online Now</Btn>
-                <Btn out color={T.forest} full style={{padding:"11px",fontSize:13}}>Download Invoice</Btn>
-              </Crd>
+              {/* Built from the outstanding invoices themselves. This card used
+                  to state a flat Rs 25,000 for "March + April 2026" with a
+                  March 20 deadline, no matter what was actually owed. */}
+              {(()=>{
+                const unpaid=student.fees.filter(f=>f.status!=="paid"&&f.status!=="waived");
+                if(!unpaid.length) return(
+                  <Crd style={{padding:"22px",border:`1.5px solid ${T.success}55`,background:`linear-gradient(135deg,#fff,${T.success}05)`}}>
+                    <div style={{fontSize:10,fontWeight:700,color:T.success,letterSpacing:"1.5px",textTransform:"uppercase",marginBottom:10}}>✓ Nothing Due</div>
+                    <div style={{fontSize:13,color:T.muted,lineHeight:1.7}}>All issued invoices for {student.name} have been settled.</div>
+                  </Crd>
+                );
+                const total=unpaid.reduce((s,f)=>s+f.amt,0);
+                const next=unpaid[unpaid.length-1];
+                return(
+                  <Crd style={{padding:"22px",border:`1.5px solid ${T.warning}55`,background:`linear-gradient(135deg,#fff,${T.warning}05)`}}>
+                    <div style={{fontSize:10,fontWeight:700,color:T.warning,letterSpacing:"1.5px",textTransform:"uppercase",marginBottom:10}}>⚠ Payment Due</div>
+                    <div style={{fontFamily:"Georgia,serif",fontSize:24,fontWeight:800,color:T.ink}}>Rs. {total.toLocaleString()}</div>
+                    <div style={{fontSize:12,color:T.muted,marginTop:4,marginBottom:16,lineHeight:1.6}}>
+                      {unpaid.map(f=>f.month).join(" · ")}
+                      {next?.dueDate&&<><br/>Due {next.dueDate}</>}
+                    </div>
+                    <div style={{fontSize:11.5,color:T.muted,lineHeight:1.6,marginBottom:12}}>
+                      Online payment isn't available yet — fees are recorded by the school office when they receive them.
+                    </div>
+                    <Btn out color={T.forest} full onClick={()=>{
+                      if(!downloadCsv(stamped(`fees-${student.name.replace(/\W+/g,"-").toLowerCase()}`,"csv"),
+                        student.fees.map(f=>({period:f.month,amount:f.amt,status:f.status,due:f.dueDate??"",paid:f.date??"",method:f.method??""})),
+                        [["Period","period"],["Amount (PKR)","amount"],["Status","status"],["Due","due"],["Paid On","paid"],["Method","method"]]))
+                        alert("No invoices to download yet.");
+                    }} style={{padding:"11px",fontSize:13}}>Download Fee Statement</Btn>
+                  </Crd>
+                );
+              })()}
               <Crd style={{padding:"22px"}}>
-                <div style={{fontSize:13,fontWeight:700,color:T.ink,marginBottom:12}}>Monthly Breakdown</div>
-                {[["Tuition","Rs. 10,000"],["Lab Charges","Rs. 1,000"],["Library","Rs. 500"],["Sports","Rs. 500"],["Miscellaneous","Rs. 500"]].map(([l,v])=>(
-                  <div key={l} style={{display:"flex",justifyContent:"space-between",padding:"8px 0",borderBottom:`1px solid ${T.border}`}}>
-                    <span style={{fontSize:12,color:T.muted}}>{l}</span><span style={{fontSize:12,fontWeight:600,color:T.ink}}>{v}</span>
+                <div style={{fontSize:13,fontWeight:700,color:T.ink,marginBottom:4}}>Invoice Amounts</div>
+                <div style={{fontSize:11.5,color:T.muted,marginBottom:12,lineHeight:1.6}}>
+                  What the school has billed per period.
+                </div>
+                {!student.fees.length&&<div style={{fontSize:12,color:T.muted}}>Nothing billed yet.</div>}
+                {student.fees.slice(0,6).map((f,i)=>(
+                  <div key={f.id??i} style={{display:"flex",justifyContent:"space-between",padding:"8px 0",borderBottom:`1px solid ${T.border}`}}>
+                    <span style={{fontSize:12,color:T.muted}}>{f.month}</span><span style={{fontSize:12,fontWeight:600,color:T.ink}}>Rs. {f.amt.toLocaleString()}</span>
                   </div>
                 ))}
-                <div style={{display:"flex",justifyContent:"space-between",padding:"10px 0"}}><span style={{fontSize:13,fontWeight:700,color:T.ink}}>Total / Month</span><span style={{fontSize:14,fontWeight:800,color:T.forest}}>Rs. 12,500</span></div>
               </Crd>
             </div>
           </div>
@@ -3506,29 +4354,40 @@ const ParentPortal=({user,db,onLogout,onReload})=>{
         <div style={{animation:"fadeUp .35s"}}>
           <SecHead pre="Schedule" title="Class Timetable"/>
           <Crd style={{padding:"26px",overflowX:"auto"}}>
-            <table style={{width:"100%",borderCollapse:"collapse",minWidth:660}}>
-              <thead>
-                <tr>
-                  <th style={{padding:"10px 16px",textAlign:"left",fontSize:11,color:T.muted,fontWeight:700,textTransform:"uppercase",borderBottom:`2px solid ${T.border}`,width:110}}>Day</th>
-                  {["8:00–8:40","8:40–9:20","9:20–10:00","10:00–10:40","10:40–11:20","11:20–12:00"].map(t=><th key={t} style={{padding:"10px 8px",textAlign:"center",fontSize:10,color:T.muted,fontWeight:700,textTransform:"uppercase",letterSpacing:".4px",borderBottom:`2px solid ${T.border}`}}>{t}</th>)}
-                </tr>
-              </thead>
-              <tbody>
-                {student.timetable.map((row,i)=>(
-                  <tr key={i} style={{borderBottom:`1px solid ${T.border}`,background:i%2===0?T.card:T.paper}}>
-                    <td style={{padding:"11px 16px",fontSize:12,fontWeight:700,color:T.ink}}>{row.day}</td>
-                    {row.p.map((p,j)=>{const c=sc(p);return<td key={j} style={{padding:"7px 5px",textAlign:"center"}}><div style={{background:`${c}15`,color:c,borderRadius:9,padding:"6px 4px",fontSize:10,fontWeight:700,lineHeight:1.3}}>{p}</div></td>;})}
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </Crd>
-          <div style={{display:"flex",gap:8,flexWrap:"wrap",marginTop:16}}>
-            {Object.entries({Mathematics:T.purple,"Computer Sc.":T.forest,Urdu:T.green,English:T.blue,Physics:T.gold,Chemistry:T.clay}).map(([s,c])=>(
-              <div key={s} style={{display:"flex",alignItems:"center",gap:6,padding:"5px 12px",background:`${c}12`,borderRadius:99,border:`1px solid ${c}30`}}>
-                <div style={{width:7,height:7,borderRadius:"50%",background:c}}/><span style={{fontSize:11,color:c,fontWeight:700}}>{s}</span>
+            {!student.timetable.length?(
+              <div style={{fontSize:13,color:T.muted,padding:"8px 0",lineHeight:1.7}}>
+                No timetable has been published for {student.grade} {student.section} yet.
               </div>
-            ))}
+            ):(
+              <table style={{width:"100%",borderCollapse:"collapse",minWidth:660}}>
+                <thead>
+                  <tr>
+                    <th style={{padding:"10px 16px",textAlign:"left",fontSize:11,color:T.muted,fontWeight:700,textTransform:"uppercase",borderBottom:`2px solid ${T.border}`,width:110}}>Day</th>
+                    {/* Real period times from the published slots. */}
+                    {student.timetablePeriods.map(p=><th key={p.period} style={{padding:"10px 8px",textAlign:"center",fontSize:10,color:T.muted,fontWeight:700,textTransform:"uppercase",letterSpacing:".4px",borderBottom:`2px solid ${T.border}`}}>{p.label}</th>)}
+                  </tr>
+                </thead>
+                <tbody>
+                  {student.timetable.map((row,i)=>(
+                    <tr key={row.day} style={{borderBottom:`1px solid ${T.border}`,background:i%2===0?T.card:T.paper}}>
+                      <td style={{padding:"11px 16px",fontSize:12,fontWeight:700,color:T.ink}}>{row.day}</td>
+                      {row.p.map((p,j)=>{const c=sc(p);return<td key={j} style={{padding:"7px 5px",textAlign:"center"}}><div style={{background:`${c}15`,color:c,borderRadius:9,padding:"6px 4px",fontSize:10,fontWeight:700,lineHeight:1.3}}>{p}</div></td>;})}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </Crd>
+          {/* Legend built from the subjects that actually appear, not a fixed list. */}
+          <div style={{display:"flex",gap:8,flexWrap:"wrap",marginTop:16}}>
+            {[...new Set(student.timetable.flatMap(r=>r.p))].filter(Boolean).map(s=>{
+              const c=sc(s);
+              return(
+                <div key={s} style={{display:"flex",alignItems:"center",gap:6,padding:"5px 12px",background:`${c}12`,borderRadius:99,border:`1px solid ${c}30`}}>
+                  <div style={{width:7,height:7,borderRadius:"50%",background:c}}/><span style={{fontSize:11,color:c,fontWeight:700}}>{s}</span>
+                </div>
+              );
+            })}
           </div>
         </div>
       )}
@@ -3565,7 +4424,7 @@ const ParentPortal=({user,db,onLogout,onReload})=>{
               </Crd>
               <Crd style={{padding:"22px"}}>
                 <div style={{fontSize:13,fontWeight:700,color:T.ink,marginBottom:12}}>Academic Info</div>
-                {[["Roll No.",student.roll],["Grade",`${student.grade} · ${student.section}`],["GPA",`${student.gpa} / 4.0`],["Rank",`#${student.rank} of ${student.classSize}`],["Subjects","6"],["AI Score","82 / 100"]].map(([l,v])=>(
+                {[["Roll No.",student.roll],["Grade",`${student.grade} · ${student.section}`],["GPA",`${student.gpa} / 4.0`],["Rank",`#${student.rank} of ${student.classSize}`],["Subjects",String(student.subjects.length)],["AI Score",`${student.aiScore} / 100`]].map(([l,v])=>(
                   <div key={l} style={{display:"flex",justifyContent:"space-between",padding:"8px 0",borderBottom:`1px solid ${T.border}`}}>
                     <span style={{fontSize:12,color:T.muted}}>{l}</span><span style={{fontSize:12,fontWeight:600,color:T.ink}}>{v}</span>
                   </div>
@@ -3590,14 +4449,22 @@ const ParentPortal=({user,db,onLogout,onReload})=>{
                   ))}
                 </div>
               </Crd>
+              {/* Notification settings are held per institute and only an admin
+                  can change them (GET/PATCH /institutes/me/notifications is
+                  ADMIN-only, and there is no per-guardian preference record).
+                  This card used to show four switches with preset on/off
+                  states and no handler — nothing a parent clicked did
+                  anything, or could have. */}
               <Crd style={{padding:"26px"}}>
-                <div style={{fontSize:14,fontWeight:700,color:T.ink,marginBottom:16}}>Notification Preferences</div>
-                {[["Email Notifications","Grades, attendance & message alerts",true],["SMS Alerts","Fee reminders via SMS",true],["Weekly AI Report","AI performance summary every Monday",false],["Event Reminders","School events and exam notifications",true]].map(([l,sub,on])=>(
-                  <div key={l} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"12px 0",borderBottom:`1px solid ${T.border}`}}>
-                    <div><div style={{fontSize:13,fontWeight:500,color:T.ink}}>{l}</div><div style={{fontSize:11,color:T.muted,marginTop:2}}>{sub}</div></div>
-                    <Toggle on={on}/>
-                  </div>
-                ))}
+                <div style={{fontSize:14,fontWeight:700,color:T.ink,marginBottom:6}}>Notifications</div>
+                <p style={{fontSize:12.5,color:T.muted,lineHeight:1.7,marginBottom:14}}>
+                  {inst?.name||"Your school"} decides which alerts go out — fee reminders,
+                  attendance notices and message emails are configured by the school office.
+                  Contact them to change what you receive at <b style={{color:T.ink}}>{parent?.email}</b>.
+                </p>
+                <Btn out color={T.forest} full onClick={()=>{setTab("messages");setCompose(true);}} style={{padding:"10px",fontSize:12.5}}>
+                  Message the school →
+                </Btn>
               </Crd>
             </div>
           </div>
@@ -3638,6 +4505,9 @@ export default function App() {
     await api.auth.logout().catch(()=>{});
     setUser(null);
     setScreen("landing");
+    // Drop the tab hash — it belongs to the portal being left, and the next
+    // sign-in may be a role that has no such screen.
+    window.history.replaceState(null,"",window.location.pathname);
   };
 
   // Trade the refresh cookie for an access token on boot, so a page reload
@@ -3655,16 +4525,18 @@ export default function App() {
 
   if(restoring) return <Splash title="Signing you in…" detail="Restoring your session."/>;
 
-  if(screen==="landing") return <Landing onLogin={()=>setScreen("login")} onSignup={()=>setScreen("signup")}/>;
+  if(screen==="landing") return <Landing onLogin={()=>setScreen("login")} onSignup={()=>setScreen("signup")} onDemoLogin={login}/>;
   if(screen==="login")   return <Login   onLogin={login} onBack={()=>setScreen("landing")} onSignup={()=>setScreen("signup")}/>;
   if(screen==="signup")  return <Signup  onBack={()=>setScreen("landing")} onLogin={()=>setScreen("login")}/>;
 
-  if(!user) return <Landing onLogin={()=>setScreen("login")} onSignup={()=>setScreen("signup")}/>;
+  if(!user) return <Landing onLogin={()=>setScreen("login")} onSignup={()=>setScreen("signup")} onDemoLogin={login}/>;
 
   if(error) return (
     <Splash
-      title="Couldn't load your data"
-      detail={`${error.message}${error.status?"":" — check that the API server is running."}`}
+      // A network failure already explains itself; only a server-side error
+      // needs the extra nudge about the API being up.
+      title={error.isNetwork?"Can't reach the server":"Couldn't load your data"}
+      detail={error.message}
       tone={T.danger}
       action={reload}
       actionLabel="Try again"
@@ -3684,7 +4556,9 @@ export default function App() {
     `List views need server-side paging at this size.`
   );
 
-  const props={user,db,onLogout:logout,onReload:reload,setDb:reload};
+  // `onUser` lets a portal push back an updated profile (name/phone) so the
+  // sidebar and header reflect it without a re-login.
+  const props={user,db,onLogout:logout,onReload:reload,setDb:reload,onUser:setUser};
   if(user.role==="superadmin") return <SuperAdmin  {...props}/>;
   if(user.role==="admin")      return <AdminPortal {...props}/>;
   if(user.role==="teacher")    return <TeacherPortal {...props}/>;
@@ -3692,6 +4566,8 @@ export default function App() {
 
   return <Splash title="Unknown role" detail={`No portal exists for "${user.role}".`} tone={T.danger} action={logout} actionLabel="Sign out"/>;
 }
+
+
 
 
 
