@@ -33,15 +33,30 @@ export const tokens = {
   },
 };
 
-/** Thrown for any non-2xx response. Carries the API's message and field errors. */
+/**
+ * Thrown for any non-2xx response. Carries the API's message and field errors.
+ *
+ * `status` is 0 when the request never reached a server at all — offline, DNS
+ * failure, connection refused. `isNetwork` lets a caller tell "the server said
+ * no" apart from "there was no server", which need different wording.
+ */
 export class ApiError extends Error {
   constructor(status, message, errors) {
     super(message);
     this.name = "ApiError";
     this.status = status;
     this.errors = errors;
+    this.isNetwork = status === 0;
   }
 }
+
+/**
+ * Shown whenever the API can't be reached. Worth being specific: in local
+ * development the usual cause is simply that the backend isn't running, and
+ * "Server returned 500" sent people hunting for a server bug instead.
+ */
+const UNREACHABLE =
+  "Can't reach the EduConnect API. Check that the backend is running on port 5001 and that you're online.";
 
 /** Called when refreshing fails — the app uses this to bounce to the login screen. */
 let onSessionExpired = () => {};
@@ -111,14 +126,22 @@ async function request(path, { method = "GET", body, params, retry = true } = {}
   const access = tokens.access;
   if (access) headers.Authorization = `Bearer ${access}`;
 
-  const res = await fetch(url.pathname + url.search, {
-    method,
-    headers,
-    // The refresh cookie is path-scoped to /api/auth, so this only actually
-    // sends anything on the auth routes.
-    credentials: "include",
-    ...(body && { body: JSON.stringify(body) }),
-  });
+  let res;
+  try {
+    res = await fetch(url.pathname + url.search, {
+      method,
+      headers,
+      // The refresh cookie is path-scoped to /api/auth, so this only actually
+      // sends anything on the auth routes.
+      credentials: "include",
+      ...(body && { body: JSON.stringify(body) }),
+    });
+  } catch {
+    // fetch only rejects when the request never got a response — offline,
+    // connection refused, DNS. Unwrapped, this reached callers as a bare
+    // TypeError with no `status`, so error handling keyed on status missed it.
+    throw new ApiError(0, UNREACHABLE);
+  }
 
   if (res.status === 204) return null;
 
@@ -126,7 +149,11 @@ async function request(path, { method = "GET", body, params, retry = true } = {}
   try {
     payload = await res.json();
   } catch {
-    throw new ApiError(res.status, `Server returned ${res.status}`);
+    // The API always sends a JSON envelope, including on its own 500s. A
+    // non-JSON reply therefore came from something in front of it — the dev
+    // proxy with nothing to forward to, or a gateway — not from the API.
+    if (res.status >= 500) throw new ApiError(0, UNREACHABLE);
+    throw new ApiError(res.status, `Server returned an unreadable ${res.status} response.`);
   }
 
   if (!res.ok) {

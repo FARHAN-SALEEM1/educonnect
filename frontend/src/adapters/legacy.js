@@ -50,6 +50,7 @@ export const toLegacyUser = (user) => {
     email: user.email,
     name: user.name,
     role: user.role.toLowerCase(),
+    phone: user.phone ?? null,
     inst: user.instituteId ?? null,
     // The portals use `ref` to find the teacher/parent profile behind a login.
     ref: user.teacherId ?? user.parentId ?? null,
@@ -87,8 +88,9 @@ export const toLegacyInstitute = (institute) => {
  * (`${att.present}%`, donut fills, bar widths). Convert once, here.
  */
 export const toLegacyAttendance = (summary) => {
+  const empty = { present: 0, absent: 0, late: 0, leave: 0, total: 0 };
   if (!summary || !summary.total) {
-    return { present: 0, absent: 0, late: 0, leave: 0, total: 0, days: 0, rate: 0 };
+    return { present: 0, absent: 0, late: 0, leave: 0, total: 0, days: 0, rate: 0, counts: empty };
   }
   const pct = (n) => Math.round(((n ?? 0) / summary.total) * 100);
   return {
@@ -101,6 +103,16 @@ export const toLegacyAttendance = (summary) => {
     total: 100,
     days: summary.total, // real school-day count
     rate: Math.round(summary.rate ?? 0),
+    // Raw day counts, kept alongside the percentages. The parent portal shows
+    // both, and used to print a hard-coded 87/8/5/2 row because only the
+    // percentages survived this mapping.
+    counts: {
+      present: summary.present ?? 0,
+      absent: summary.absent ?? 0,
+      late: summary.late ?? 0,
+      leave: summary.leave ?? 0,
+      total: summary.total,
+    },
   };
 };
 
@@ -112,8 +124,24 @@ export const toLegacyWeek = (week = []) =>
     s: (w.status || "present").toLowerCase(),
   }));
 
-/** monthlyAtt is a plain number-per-month array driving the bar chart. */
-export const toLegacyMonthly = (monthly = []) => monthly.map((m) => m.present ?? 0);
+/**
+ * Drives the monthly attendance bars.
+ *
+ * The API returns the last 12 months ending with the current one, so the
+ * label has to come from each row's own `month` key — the chart used to index
+ * a fixed Jan…Dec array, which mislabelled every bar whenever the school year
+ * didn't happen to start in January.
+ */
+export const toLegacyMonthly = (monthly = []) =>
+  monthly.map((m) => {
+    const [year, month] = (m.month ?? "").split("-");
+    return {
+      present: m.present ?? 0,
+      total: m.total ?? 0,
+      label: MONTHS[Number(month) - 1] ?? "",
+      year,
+    };
+  });
 
 // ─────────────────────────── finance ───────────────────────────
 
@@ -139,11 +167,16 @@ export const toLegacyFees = (input = []) => {
 export const toLegacySubjects = (subjects = []) =>
   subjects.map((s) => ({
     id: s.subjectId ?? s.id,
+    // The enrolment row, which is what score edits are written against.
+    enrollmentId: s.enrollmentId ?? null,
     name: s.name,
     score: s.score ?? 0,
     prev: s.previousScore ?? s.score ?? 0,
     grade: s.grade ?? "—",
     teacher: s.teacher ?? "Unassigned",
+    // Identity, not the display name — two staff can share a name, and the
+    // teacher portal filters its roster on this.
+    teacherId: s.teacherId ?? null,
     color: s.color || "#2D6A4F",
     pred: s.predicted ?? s.score ?? 0,
   }));
@@ -158,14 +191,75 @@ export const toLegacyAssessments = (assessments = []) =>
     date: shortDate(a.takenOn),
   }));
 
-/** API day-groups → [{ day: "Monday", p: ["Maths", "English", …] }] */
-export const toLegacyTimetable = (days = []) =>
-  days.map((d) => ({
-    day: d.day || DAY_NAMES[d.dayOfWeek % 7],
-    p: [...(d.periods || [])]
-      .sort((a, b) => a.period - b.period)
-      .map((p) => p.subject),
+/**
+ * Normalises either timetable shape into flat slots.
+ *
+ * `GET /timetable` returns day-groups (`{ day, periods: [...] }`), but the
+ * student record returns one flat array of slots. The adapter only understood
+ * the first, so `s.timetable?.days` was always undefined on a student and the
+ * parent portal's timetable rendered an empty grid despite the data being there.
+ */
+const timetableSlots = (input) => {
+  if (!input) return [];
+  const groups = Array.isArray(input) ? null : input.days;
+  if (groups) {
+    return groups.flatMap((d) =>
+      (d.periods || []).map((p) => ({
+        dayOfWeek: d.dayOfWeek,
+        day: d.day,
+        period: p.period,
+        subject: p.subject,
+        startTime: p.startTime,
+        endTime: p.endTime,
+      }))
+    );
+  }
+  return (Array.isArray(input) ? input : []).map((s) => ({
+    dayOfWeek: s.dayOfWeek,
+    day: s.day,
+    period: s.period,
+    // A flat slot carries the whole subject object; a grouped one just a name.
+    subject: typeof s.subject === "string" ? s.subject : s.subject?.name,
+    startTime: s.startTime,
+    endTime: s.endTime,
   }));
+};
+
+/** → [{ day: "Monday", p: ["Maths", "English", …] }], ordered by period. */
+export const toLegacyTimetable = (input) => {
+  const slots = timetableSlots(input);
+  const byDay = new Map();
+  for (const s of slots) {
+    const key = s.dayOfWeek ?? DAY_NAMES.indexOf(s.day);
+    if (!byDay.has(key)) byDay.set(key, []);
+    byDay.get(key).push(s);
+  }
+  return [...byDay.entries()]
+    .sort((a, b) => a[0] - b[0])
+    .map(([dayOfWeek, rows]) => ({
+      day: rows[0].day || DAY_NAMES[dayOfWeek % 7],
+      p: [...rows].sort((a, b) => a.period - b.period).map((r) => r.subject),
+    }));
+};
+
+/**
+ * Column headers for the timetable grid, taken from the real slot times —
+ * the parent portal used to print a fixed "8:00–8:40 …" row that matched
+ * nothing in the database.
+ */
+export const toLegacyPeriods = (input) => {
+  const slots = timetableSlots(input);
+  const byPeriod = new Map();
+  for (const s of slots) {
+    if (!byPeriod.has(s.period)) {
+      byPeriod.set(s.period, {
+        period: s.period,
+        label: s.startTime && s.endTime ? `${s.startTime}–${s.endTime}` : `Period ${s.period}`,
+      });
+    }
+  }
+  return [...byPeriod.values()].sort((a, b) => a.period - b.period);
+};
 
 export const toLegacyInsights = (insights = []) =>
   insights.map((i) => ({
@@ -204,6 +298,7 @@ export const toLegacyStudentSummary = (s) => ({
   id: s.id,
   code: s.code,
   name: s.name,
+  status: (s.status || "active").toLowerCase(),
   grade: s.grade,
   section: s.section,
   roll: s.rollNo,
@@ -240,7 +335,14 @@ export const toLegacyStudentFull = (s) => ({
   weekAtt: toLegacyWeek(s.attendance?.week),
   monthlyAtt: toLegacyMonthly(s.attendance?.monthly),
   fees: toLegacyFees(s.fees?.invoices),
-  timetable: toLegacyTimetable(s.timetable?.days ?? s.timetableDays),
+  // The server already totals these; the parent fee page used to multiply an
+  // invoice count by a hard-coded 12,500 instead of reading them.
+  feeTotals: {
+    paid: s.fees?.paid ?? 0,
+    outstanding: s.fees?.outstanding ?? 0,
+  },
+  timetable: toLegacyTimetable(s.timetable ?? s.timetableDays),
+  timetablePeriods: toLegacyPeriods(s.timetable ?? s.timetableDays),
   aiRecs: toLegacyInsights(s.aiInsights),
   aiScore: aiScoreFrom(s.aiInsights),
   aiScoreLabel: aiScoreLabel(aiScoreFrom(s.aiInsights)),

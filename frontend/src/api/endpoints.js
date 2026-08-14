@@ -21,8 +21,16 @@ export const auth = {
   },
   me: () => http.get("/auth/me"),
   updateProfile: (payload) => http.patch("/auth/me", payload),
-  changePassword: (currentPassword, newPassword) =>
-    http.post("/auth/change-password", { currentPassword, newPassword }),
+  /**
+   * Changing the password revokes every session and issues this device a new
+   * one — so the returned token has to replace the one in memory, or the next
+   * request would go out with a token whose refresh cookie no longer exists.
+   */
+  changePassword: async (currentPassword, newPassword) => {
+    const data = await http.post("/auth/change-password", { currentPassword, newPassword });
+    tokens.set(data);
+    return data;
+  },
 };
 
 export const plans = {
@@ -57,6 +65,9 @@ export const institutes = {
   cancelMySubscription: (reason) =>
     http.post("/institutes/me/subscription/cancel", { ...(reason && { reason }) }),
   resumeMySubscription: () => http.post("/institutes/me/subscription/resume", {}),
+
+  notificationSettings: () => http.get("/institutes/me/notifications"),
+  updateNotificationSettings: (patch) => http.patch("/institutes/me/notifications", patch),
   changeStatus: (id, status) => http.patch(`/institutes/${id}/status`, { status }),
   remove: (id) => http.delete(`/institutes/${id}`),
 };
