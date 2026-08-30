@@ -1,12 +1,12 @@
 import { z } from "zod";
-import { emailField, optionalDate, phone } from "./common.js";
+import { emailField, optionalNotFutureDate, phone } from "./common.js";
 
 export const createStudentSchema = z.object({
   name: z.string().trim().min(2, "Student name is required").max(120),
   grade: z.string().trim().min(1, "Grade is required").max(30),
   section: z.string().trim().min(1, "Section is required").max(10),
   rollNo: z.string().trim().min(1, "Roll number is required").max(30),
-  dob: optionalDate,
+  dob: optionalNotFutureDate("Date of birth"),
   gender: z.enum(["Male", "Female", "Other"]).optional(),
   bloodGroup: z.string().trim().max(5).optional().nullable(),
   phone: phone.optional().nullable(),
@@ -70,6 +70,25 @@ const importRow = z.object({
   guardianEmail: z.string().optional(),
   guardianPhone: z.string().optional(),
   guardianRelation: z.string().optional(),
+});
+
+/**
+ * The end-of-session move.
+ *
+ * `toGrade`/`toSection` are optional because a graduating class moves into
+ * nothing; the controller insists on them for the other two outcomes.
+ */
+export const promoteStudentsSchema = z.object({
+  fromGrade: z.string().trim().min(1, "Which class are they moving from?"),
+  fromSection: z.string().trim().min(1, "Which section?"),
+  toGrade: z.string().trim().min(1).optional(),
+  toSection: z.string().trim().min(1).optional(),
+  toSession: z.string().trim().regex(/^\d{4}-\d{2}$/, "Session looks like 2027-28"),
+  outcome: z.enum(["PROMOTED", "RETAINED", "GRADUATED"]).default("PROMOTED"),
+  studentIds: z.array(z.string()).optional(),
+  notes: z.string().trim().max(240).optional().nullable(),
+  dryRun: z.boolean().optional(),
+  instituteId: z.string().optional(),
 });
 
 export const importStudentsSchema = z.object({

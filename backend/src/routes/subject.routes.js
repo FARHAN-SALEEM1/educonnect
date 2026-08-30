@@ -47,6 +47,15 @@ router.delete(
 router.get("/", scopeToInstitute, ctrl.listSubjects);
 router.get("/:id", scopeToInstitute, ctrl.getSubject);
 
+// The subject's own teacher may do this too: they can already set any score
+// by hand, so recomputing from marks takes nothing away from them.
+router.post(
+  "/:id/recalculate",
+  authorize("SUPERADMIN", "ADMIN", "TEACHER"),
+  scopeToInstitute,
+  ctrl.recalculateSubject
+);
+
 router.post(
   "/",
   authorize("SUPERADMIN", "ADMIN"),

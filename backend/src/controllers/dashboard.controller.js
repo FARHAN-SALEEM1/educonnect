@@ -1,11 +1,13 @@
 import { prisma } from "../config/prisma.js";
 import { ApiError } from "../utils/ApiError.js";
+import { policyFor } from "../services/grading.service.js";
 import { asyncHandler } from "../utils/asyncHandler.js";
+import { liveEnrolmentFilter, readSessionId, sessionFilter } from "../services/session.service.js";
 import { ok } from "../utils/response.js";
+import { PLAN_PUBLIC } from "../utils/publicFields.js";
 import {
   attendanceSummary,
   averageScore,
-  calculateGpa,
   periodKey,
   periodLabel,
 } from "../utils/academics.js";
@@ -49,11 +51,31 @@ export const superAdminDashboard = asyncHandler(async (_req, res) => {
       prisma.teacher.count(),
       prisma.parent.count(),
       prisma.user.count(),
-      prisma.plan.findMany({ include: { _count: { select: { institutes: true } } } }),
+      /**
+       * Plans, counting only the schools that are actually paying.
+       *
+       * This counted every institute on each plan, while `mrr` below counts
+       * only the ACTIVE ones — so the Super Admin dashboard showed a revenue
+       * breakdown that did not add up to its own headline. With one suspended
+       * school the two differed by exactly that school's fee: Rs. 65,995 broken
+       * down under a total of Rs. 60,996, and nothing on the screen explaining
+       * which was right.
+       *
+       * `deletedAt` is spelt out because `_count` is a nested read that the
+       * soft-delete extension does not reach — the same reason the recent
+       * institutes query below has to say it too.
+       */
+      prisma.plan.findMany({
+        include: {
+          _count: { select: { institutes: { where: { status: "ACTIVE", deletedAt: null } } } },
+        },
+      }),
       prisma.institute.findMany({
         take: 6,
         orderBy: { joinedAt: "desc" },
-        include: { plan: true, _count: { select: { students: true } } },
+        // `_count` is a nested read the soft-delete extension doesn't reach,
+        // so removed students would otherwise inflate each school's headline.
+        include: { plan: { select: PLAN_PUBLIC }, _count: { select: { students: { where: { deletedAt: null } } } } },
       }),
       prisma.subscriptionInvoice.findMany({
         where: { period: { in: lastNMonths(12) } },
@@ -63,7 +85,8 @@ export const superAdminDashboard = asyncHandler(async (_req, res) => {
 
   const byStatus = await prisma.institute.groupBy({ by: ["status"], _count: true });
 
-  // MRR counts only institutes that are actually active.
+  // MRR counts only institutes that are actually active — and so does the plan
+  // breakdown above, so the parts add up to this total by construction.
   const activeInstitutes = await prisma.institute.findMany({
     where: { status: "ACTIVE" },
     include: { plan: { select: { price: true } } },
@@ -132,13 +155,29 @@ export const superAdminDashboard = asyncHandler(async (_req, res) => {
  */
 export const adminDashboard = asyncHandler(async (req, res) => {
   const instituteId = req.instituteId;
+  /**
+   * Every academic figure on this screen is about one year.
+   *
+   * A class average or a top-performers list drawn from two years at once
+   * would rank a promoted student on marks from a class they have left.
+   */
+  const sessionId = await readSessionId(instituteId);
   if (!instituteId) throw ApiError.badRequest("instituteId is required");
+
+  /**
+   * The school's own scale, not the platform's.
+   *
+   * Bands and the pass mark are set per school, but only the result card ever
+   * asked — so a school that moved A+ to 80 saw it on the card and nowhere
+   * else on this screen.
+   */
+  const grading = await policyFor(instituteId);
 
   const today = todayIn(await zoneFor(instituteId));
 
   const [institute, students, teachers, parents, todayAttendance, feeRows, notices] =
     await Promise.all([
-      prisma.institute.findUnique({ where: { id: instituteId }, include: { plan: true } }),
+      prisma.institute.findUnique({ where: { id: instituteId }, include: { plan: { select: PLAN_PUBLIC } } }),
       prisma.student.count({ where: { instituteId, status: "ACTIVE" } }),
       prisma.teacher.count({ where: { instituteId, isActive: true } }),
       prisma.parent.count({ where: { instituteId } }),
@@ -186,7 +225,7 @@ export const adminDashboard = asyncHandler(async (req, res) => {
       grade: true,
       section: true,
       rollNo: true,
-      enrollments: { select: { currentScore: true } },
+      enrollments: { where: sessionFilter(sessionId), select: { currentScore: true } },
     },
   });
 
@@ -217,7 +256,7 @@ export const adminDashboard = asyncHandler(async (req, res) => {
       section: s.section,
       rollNo: s.rollNo,
       average: averageScore(s.enrollments),
-      gpa: calculateGpa(s.enrollments),
+      gpa: grading.gpa(s.enrollments),
     }))
     .filter((s) => s.average > 0)
     .sort((a, b) => b.average - a.average);
@@ -294,12 +333,15 @@ export const teacherDashboard = asyncHandler(async (req, res) => {
 
   const today = todayIn(await zoneFor(req.user.instituteId));
 
+  const sessionId = await readSessionId(req.instituteId);
+
   const teacher = await prisma.teacher.findUnique({
     where: { id: req.user.teacherId },
     include: {
       subjects: {
         include: {
           enrollments: {
+            where: liveEnrolmentFilter(sessionId),
             include: { student: { select: { id: true, grade: true, section: true } } },
           },
         },
@@ -420,6 +462,15 @@ export const teacherDashboard = asyncHandler(async (req, res) => {
  * Summary across all of the signed-in parent's children.
  */
 export const parentDashboard = asyncHandler(async (req, res) => {
+  const parentSessionId = await readSessionId(req.user.instituteId);
+  /**
+   * The school's own scale, not the platform's.
+   *
+   * Bands and the pass mark are set per school, but only the result card ever
+   * asked — so a school that moved A+ to 80 saw it on the card and nowhere
+   * else on this screen.
+   */
+  const grading = await policyFor(req.user.instituteId);
   if (!req.user.parentId) throw ApiError.forbidden("No parent profile linked to your account");
 
   const parent = await prisma.parent.findUnique({
@@ -428,7 +479,10 @@ export const parentDashboard = asyncHandler(async (req, res) => {
       institute: { select: { id: true, name: true, logo: true, color: true, city: true } },
       students: {
         include: {
-          enrollments: { include: { subject: { select: { name: true, color: true } } } },
+          enrollments: {
+            where: sessionFilter(parentSessionId),
+            include: { subject: { select: { name: true, color: true } } },
+          },
           feeInvoices: { orderBy: { period: "desc" } },
           aiInsights: {
             include: { subject: { select: { name: true, color: true } } },
@@ -463,14 +517,15 @@ export const parentDashboard = asyncHandler(async (req, res) => {
         section: s.section,
         rollNo: s.rollNo,
         photoUrl: s.photoUrl,
-        gpa: calculateGpa(s.enrollments),
+        gpa: grading.gpa(s.enrollments),
         average: averageScore(s.enrollments),
         subjects: s.enrollments.map((e) => ({
           name: e.subject.name,
           color: e.subject.color,
           score: e.currentScore,
           previousScore: e.previousScore,
-          grade: e.letterGrade,
+          // The live policy, not the letter cached when this was last marked.
+          grade: grading.letterGrade(e.currentScore),
           predicted: e.predictedScore,
         })),
         attendance: attendanceSummary(attendance),
@@ -529,6 +584,18 @@ export const instituteReport = asyncHandler(async (req, res) => {
   const instituteId = req.instituteId;
   if (!instituteId) throw ApiError.badRequest("instituteId is required");
 
+  // Academic figures are about one year; the date range below narrows the
+  // attendance and fee history within it.
+  const reportSessionId = await readSessionId(instituteId);
+  /**
+   * The school's own scale, not the platform's.
+   *
+   * Bands and the pass mark are set per school, but only the result card ever
+   * asked — so a school that moved A+ to 80 saw it on the card and nowhere
+   * else on this screen.
+   */
+  const grading = await policyFor(instituteId);
+
   const { from, to } = req.query;
   const dateFilter =
     from || to
@@ -536,7 +603,7 @@ export const instituteReport = asyncHandler(async (req, res) => {
       : {};
 
   const [institute, students, attendance, feeRows, subjects] = await Promise.all([
-    prisma.institute.findUnique({ where: { id: instituteId }, include: { plan: true } }),
+    prisma.institute.findUnique({ where: { id: instituteId }, include: { plan: { select: PLAN_PUBLIC } } }),
     prisma.student.findMany({
       where: { instituteId, status: "ACTIVE" },
       select: {
@@ -545,7 +612,7 @@ export const instituteReport = asyncHandler(async (req, res) => {
         grade: true,
         section: true,
         rollNo: true,
-        enrollments: { select: { currentScore: true } },
+        enrollments: { where: sessionFilter(reportSessionId), select: { currentScore: true } },
       },
     }),
     prisma.attendance.findMany({
@@ -562,7 +629,7 @@ export const instituteReport = asyncHandler(async (req, res) => {
       where: { instituteId },
       include: {
         teacher: { select: { name: true } },
-        enrollments: { select: { currentScore: true } },
+        enrollments: { where: sessionFilter(reportSessionId), select: { currentScore: true } },
       },
     }),
   ]);
@@ -583,7 +650,7 @@ export const instituteReport = asyncHandler(async (req, res) => {
       section: s.section,
       rollNo: s.rollNo,
       average: averageScore(s.enrollments),
-      gpa: calculateGpa(s.enrollments),
+      gpa: grading.gpa(s.enrollments),
       attendanceRate: attendanceSummary(perStudentAttendance.get(s.id) || []).rate,
     }))
     .sort((a, b) => b.average - a.average);

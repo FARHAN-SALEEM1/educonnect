@@ -1,12 +1,24 @@
-import { beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import request from "supertest";
 import app from "../src/app.js";
 import { prisma, prismaRaw } from "../src/config/prisma.js";
+import { hashToken } from "../src/utils/jwt.js";
 
 /**
  * Tenant isolation and role-based visibility — the security properties the
- * whole product rests on. Everything here is read-only against the seeded
- * database, so the suite is safe to run against a dev environment.
+ * whole product rests on. Every assertion about seeded data is read-only.
+ *
+ * The one exception is the forgot-password enumeration check, which cannot be
+ * read-only: proving that a known address and an unknown one are answered
+ * identically means actually asking for a reset. That used to be asked of
+ * `admin@bhs.edu`, and `forgotPassword` marks every prior unused token used —
+ * *"Only the newest link should work"* — so running this suite silently broke
+ * any pending reset link the real admin held, and left a fresh token on their
+ * account that nothing cleaned up. One accumulated per run.
+ *
+ * So that one test now asks it of a throwaway school of this spec's own, erased
+ * afterwards through the application's lifecycle — which cascades the user and,
+ * with it, the token.
  *
  * Run `npm run db:seed` first if this skips.
  */
@@ -27,6 +39,50 @@ const as = (token) => ({
 let seeded = true;
 let bhsAdmin, lacasAdmin, teacher, parent, superAdmin;
 let bhs, lacas, otherStudent;
+
+/**
+ * Schools this spec owns. `probe` is the account the enumeration check asks
+ * about; `bystander` holds a pending reset link that must survive it.
+ */
+const made = [];
+const stamp = Date.now();
+const THROWAWAY_PASSWORD = "TenancySpec!2026";
+let probe = {}, bystander = {};
+
+/** A throwaway school with its own admin. */
+const makeSchool = async (label) => {
+  const adminEmail = `tenancy.${label}.${stamp}@test.edu`;
+  const res = await request(app).post("/api/auth/signup").send({
+    name: `Tenancy ${label} School ${stamp}`,
+    city: "Lahore",
+    phone: "03001234567",
+    email: `tenancy.school.${label}.${stamp}@test.edu`,
+    planId: "growth",
+    studentLimit: 50,
+    adminName: `Tenancy ${label} Admin`,
+    adminEmail,
+    adminPassword: THROWAWAY_PASSWORD,
+  });
+  const id = res.body.data?.institute?.id;
+  if (!id) return {};
+  made.push(id);
+  await as(superAdmin).patch(`/api/institutes/${id}/status`).send({ status: "ACTIVE" });
+  const user = await prismaRaw.user.findUnique({
+    where: { email: adminEmail }, select: { id: true },
+  });
+  return { id, adminEmail, userId: user?.id };
+};
+
+/**
+ * Erases one school the way the product does: recycle bin, then purge. Users
+ * cascade with the institute and reset tokens cascade with the users, so this
+ * can only ever name a single institute id.
+ */
+const purgeSchool = async (id) => {
+  const removed = await as(superAdmin).delete(`/api/institutes/${id}`);
+  if (removed.status === 200) await as(superAdmin).delete(`/api/institutes/${id}/purge`);
+  await prismaRaw.institute.delete({ where: { id } }).catch(() => {});
+};
 
 beforeAll(async () => {
   const count = await prisma.institute.count();
@@ -57,6 +113,27 @@ beforeAll(async () => {
   otherStudent = await prisma.student.findFirst({
     where: { institute: { name: "Beaconhouse School" }, enrollments: { none: {} } },
   });
+
+  probe = await makeSchool("probe");
+  bystander = await makeSchool("bystander");
+  if (!probe.userId || !bystander.userId) { seeded = false; return; }
+
+  // A pending reset link for somebody this spec must not disturb.
+  bystander.resetPlain = `tenancy-bystander-${stamp}`.padEnd(40, "x");
+  await prismaRaw.passwordResetToken.create({
+    data: {
+      tokenHash: hashToken(bystander.resetPlain),
+      userId: bystander.userId,
+      expiresAt: new Date(Date.now() + 30 * 60 * 1000),
+    },
+  });
+});
+
+afterAll(async () => {
+  for (const id of made) await purgeSchool(id);
+  await prismaRaw.user
+    .deleteMany({ where: { email: { contains: `.${stamp}@test.edu` } } })
+    .catch(() => {});
 });
 
 const skipUnlessSeeded = () => {
@@ -94,7 +171,12 @@ describe("authentication", () => {
   });
 
   it("does not reveal whether an email exists in the forgot-password flow", async () => {
-    const known = await request(app).post("/api/auth/forgot-password").send({ email: "admin@bhs.edu" });
+    if (skipUnlessSeeded()) return;
+    // A real account, but one this spec created and will erase — asking this of
+    // a seeded admin invalidated whatever pending link they held.
+    const known = await request(app)
+      .post("/api/auth/forgot-password")
+      .send({ email: probe.adminEmail });
     const unknown = await request(app)
       .post("/api/auth/forgot-password")
       .send({ email: "nobody@nowhere.test" });
@@ -102,6 +184,15 @@ describe("authentication", () => {
     expect(known.status).toBe(200);
     expect(unknown.status).toBe(200);
     expect(known.body.message).toBe(unknown.body.message);
+
+    /**
+     * The known branch really did the work.
+     *
+     * Without this the test would still pass if `forgotPassword` quietly did
+     * nothing at all for a real address — identical messages would then prove
+     * nothing about enumeration, only that the endpoint is uniformly inert.
+     */
+    expect(await prismaRaw.passwordResetToken.count({ where: { userId: probe.userId } })).toBe(1);
   });
 });
 
@@ -147,17 +238,19 @@ describe("session cookies", () => {
 
   it("rotates the token, so a replayed cookie is refused", async () => {
     if (skipUnlessSeeded()) return;
+    // Replays the raw Set-Cookie exactly as a stolen cookie would be, since
+    // the token is no longer obtainable any other way.
     const login = await request(app)
-      .post("/api/auth/login?tokenInBody=1")
+      .post("/api/auth/login")
       .send({ email: "admin@bhs.edu", password: "admin123" });
-    const original = login.body.data.refreshToken;
+    const original = login.headers["set-cookie"];
     expect(original).toBeTruthy();
 
-    const first = await request(app).post("/api/auth/refresh").send({ refreshToken: original });
+    const first = await request(app).post("/api/auth/refresh").set("Cookie", original).send({});
     expect(first.status).toBe(200);
 
     // Using it a second time must fail — rotation revoked it.
-    const replay = await request(app).post("/api/auth/refresh").send({ refreshToken: original });
+    const replay = await request(app).post("/api/auth/refresh").set("Cookie", original).send({});
     expect(replay.status).toBe(401);
   });
 
@@ -174,14 +267,18 @@ describe("session cookies", () => {
     expect(after.status).toBe(401);
   });
 
-  it("still serves API clients that ask for the token in the body", async () => {
+  it("never hands the refresh token to the caller, however it is asked", async () => {
     if (skipUnlessSeeded()) return;
+    // This used to assert the opposite: that `?tokenInBody=1` returned the
+    // refresh token. That switch was reachable from injected script, so the
+    // guarantee is now inverted and pinned here.
     const res = await request(app)
       .post("/api/auth/login?tokenInBody=1")
-      .send({ email: "admin@bhs.edu", password: "admin123" });
+      .send({ email: "admin@bhs.edu", password: "admin123", tokenInBody: true });
 
     expect(res.status).toBe(200);
-    expect(res.body.data.refreshToken).toBeTruthy();
+    expect(res.body.data.refreshToken).toBeUndefined();
+    expect(res.body.data.accessToken).toBeTruthy();
   });
 });
 
@@ -384,6 +481,51 @@ describe("health", () => {
     const res = await request(app).get("/health");
     expect(res.status).toBe(200);
     expect(res.body.database).toBe("up");
+  });
+});
+
+/**
+ * The regression this isolation exists for.
+ *
+ * `forgotPassword` deliberately marks every prior unused token used, so asking
+ * it about an account is not a read — it revokes whatever reset link that
+ * account was holding. Pointed at a seeded admin, running this suite silently
+ * broke a pending link and left a fresh token behind that nothing removed.
+ *
+ * Declared last so it runs after the enumeration check above has fired.
+ */
+describe("the enumeration check stays on this spec's own account", () => {
+  it("leaves another user's pending reset link untouched", async () => {
+    if (skipUnlessSeeded()) return;
+
+    const survivor = await prismaRaw.passwordResetToken.findFirst({
+      where: { tokenHash: hashToken(bystander.resetPlain) },
+      select: { userId: true, usedAt: true },
+    });
+
+    expect(survivor, "the bystander's reset token must still exist").toBeTruthy();
+    expect(survivor.userId).toBe(bystander.userId);
+    // Still usable — the whole point. Asking forgot-password about this user
+    // would have stamped `usedAt`.
+    expect(survivor.usedAt).toBeNull();
+  });
+
+  it("creates its token on the throwaway account and nowhere else", async () => {
+    if (skipUnlessSeeded()) return;
+
+    expect(await prismaRaw.passwordResetToken.count({ where: { userId: probe.userId } })).toBe(1);
+
+    // No seeded account gained a reset token from this run.
+    const demo = await prismaRaw.user.findMany({
+      where: { email: { in: ["admin@bhs.edu", "hassan@bhs.edu", "sara@gmail.com", "admin@lacas.edu"] } },
+      select: { id: true, email: true },
+    });
+    for (const u of demo) {
+      const fresh = await prismaRaw.passwordResetToken.count({
+        where: { userId: u.id, createdAt: { gte: new Date(stamp) } },
+      });
+      expect(fresh, `${u.email} gained a reset token from this spec`).toBe(0);
+    }
   });
 });
 

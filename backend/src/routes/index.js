@@ -11,10 +11,12 @@ import assessmentRoutes from "./assessment.routes.js";
 import attendanceRoutes from "./attendance.routes.js";
 import feeRoutes from "./fee.routes.js";
 import timetableRoutes from "./timetable.routes.js";
+import classRoutes from "./class.routes.js";
 import messageRoutes from "./message.routes.js";
 import noticeRoutes from "./notice.routes.js";
 import dashboardRoutes from "./dashboard.routes.js";
 import platformRoutes, { subscriptionRouter } from "./platform.routes.js";
+import billingRoutes from "./billing.routes.js";
 
 import { listPlans } from "../controllers/institute.controller.js";
 import { updatePlan } from "../controllers/platform.controller.js";
@@ -40,6 +42,8 @@ router.use("/platform", platformRoutes);
 router.use("/subscription-invoices", subscriptionRouter);
 
 router.use("/auth", authRoutes);
+// The webhook half of billing is mounted in app.js, above the JSON parser.
+router.use("/billing", billingRoutes);
 router.use("/institutes", instituteRoutes);
 router.use("/users", userRoutes);
 router.use("/students", studentRoutes);
@@ -50,6 +54,7 @@ router.use("/assessments", assessmentRoutes);
 router.use("/attendance", attendanceRoutes);
 router.use("/fees", feeRoutes);
 router.use("/timetable", timetableRoutes);
+router.use("/classes", classRoutes);
 router.use("/messages", messageRoutes);
 router.use("/notices", noticeRoutes);
 router.use("/dashboard", dashboardRoutes);
@@ -88,6 +93,7 @@ router.get("/", (_req, res) => {
       attendance: "/api/attendance",
       fees: "/api/fees",
       timetable: "/api/timetable",
+      classes: "/api/classes",
       messages: "/api/messages",
       notices: "/api/notices",
       dashboard: "/api/dashboard",

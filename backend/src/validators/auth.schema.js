@@ -7,13 +7,11 @@ export const loginSchema = z.object({
 });
 
 /**
- * The refresh token normally arrives in the httpOnly cookie, so the body is
- * optional — it's only used by clients without a cookie jar.
+ * Refresh carries no body at all — the token travels only in the httpOnly
+ * cookie. `refreshToken` and `tokenInBody` used to be accepted here; both are
+ * gone, so a caller can neither supply a token nor ask for one back.
  */
-export const refreshSchema = z.object({
-  refreshToken: z.string().min(10).optional(),
-  tokenInBody: z.boolean().optional(),
-});
+export const refreshSchema = z.object({});
 
 /** Public institute signup — creates the institute *and* its first admin. */
 export const signupSchema = z.object({
@@ -36,6 +34,33 @@ export const signupSchema = z.object({
   adminEmail: emailField,
   adminPhone: phone.optional(),
   adminPassword: passwordField,
+
+  /**
+   * What the school actually runs, asked once rather than assumed forever.
+   *
+   * All three were platform decisions before: every school got an April
+   * session, a 33% pass mark and three terms called First/Mid/Final. April
+   * is right for most of the country and wrong for Karachi and the
+   * Cambridge track; a school that finds out later has to edit its session
+   * dates by hand. Optional, so nothing that already posts a signup breaks —
+   * the old defaults are what an absent field still means.
+   */
+  sessionStartMonth: z.coerce
+    .number()
+    .int()
+    .min(1, "Pick a month")
+    .max(12, "Pick a month")
+    .optional(),
+  passingPercentage: z.coerce
+    .number()
+    .min(0, "The pass mark is a percentage")
+    .max(100, "The pass mark is a percentage")
+    .optional(),
+  terms: z
+    .array(z.string().trim().min(1, "A term needs a name").max(60))
+    .min(1, "A year needs at least one term")
+    .max(6, "Six terms is more than any school runs")
+    .optional(),
 });
 
 export const forgotPasswordSchema = z.object({

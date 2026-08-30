@@ -10,6 +10,7 @@ import {
   periodLabel,
   predictScore,
 } from "../src/utils/academics.js";
+import { DEFAULT_PASSING } from "../src/utils/grading.js";
 
 /**
  * These pure functions produce every number a parent sees on a report card,
@@ -17,22 +18,38 @@ import {
  */
 
 describe("letterGrade", () => {
+  /**
+   * The platform default is the board scale, and its floor is the pass mark:
+   * F stops at 33 because a school given this scale on day one must not be
+   * told a passing child failed.
+   */
   it("maps each band to its letter", () => {
     expect(letterGrade(100)).toBe("A+");
-    expect(letterGrade(90)).toBe("A+");
-    expect(letterGrade(89)).toBe("A");
-    expect(letterGrade(85)).toBe("A");
-    expect(letterGrade(84)).toBe("A−");
-    expect(letterGrade(70)).toBe("B");
-    expect(letterGrade(50)).toBe("D");
-    expect(letterGrade(49)).toBe("F");
+    expect(letterGrade(80)).toBe("A+");
+    expect(letterGrade(79)).toBe("A");
+    expect(letterGrade(70)).toBe("A");
+    expect(letterGrade(69)).toBe("B");
+    expect(letterGrade(50)).toBe("C");
+    expect(letterGrade(40)).toBe("D");
+    expect(letterGrade(33)).toBe("E");
+    expect(letterGrade(32)).toBe("F");
     expect(letterGrade(0)).toBe("F");
   });
 
   it("is inclusive at the lower edge of every band", () => {
     // A student on exactly 80 must get the higher grade, not the lower one.
-    expect(letterGrade(80)).toBe("A−");
-    expect(letterGrade(79.99)).toBe("B+");
+    expect(letterGrade(80)).toBe("A+");
+    expect(letterGrade(79.99)).toBe("A");
+  });
+
+  /**
+   * The scale these three read is the fallback for a caller with no school
+   * in hand. Anything answering about a particular school reads that
+   * school's own bands through policyFor().
+   */
+  it("never grades a passing mark F", () => {
+    expect(letterGrade(DEFAULT_PASSING)).not.toBe("F");
+    expect(letterGrade(DEFAULT_PASSING - 1)).toBe("F");
   });
 
   it("returns null when there is no score rather than inventing an F", () => {
@@ -55,8 +72,8 @@ describe("gradePoint", () => {
 
 describe("calculateGpa", () => {
   it("averages grade points across subjects", () => {
-    // 4.0 + 3.7 + 3.0 = 10.7 / 3
-    expect(calculateGpa([{ currentScore: 90 }, { currentScore: 80 }, { currentScore: 70 }])).toBe(3.57);
+    // A+ 4.0 + A+ 4.0 + A 3.7 = 11.7 / 3
+    expect(calculateGpa([{ currentScore: 90 }, { currentScore: 80 }, { currentScore: 70 }])).toBe(3.9);
   });
 
   it("ignores unscored subjects instead of counting them as zero", () => {

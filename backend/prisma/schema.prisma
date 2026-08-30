@@ -55,6 +55,40 @@ enum NoticeCategory {
   URGENT
 }
 
+// The heads a Pakistani school bills under.
+//
+// One challan carries several: tuition for the month, transport, the exam fee
+// when exams fall in that month, annual charges in April. Keeping them as
+// separate lines is what lets a parent see why the amount changed, and lets
+// the office answer "what is this Rs. 3,000 for?" without opening a ledger.
+enum FeeHead {
+  TUITION
+  ADMISSION
+  ANNUAL
+  EXAMINATION
+  TRANSPORT
+  HOSTEL
+  LIBRARY
+  SPORTS
+  LAB
+  MISCELLANEOUS
+}
+
+// What happened to a student at the end of a session.
+//
+// RETAINED is the Pakistani school's word for repeating the year. GRADUATED
+// covers leaving the school at the top of it — the student stops having a
+// class rather than moving to the next one, which is why toGrade is nullable.
+enum PromotionOutcome {
+  PROMOTED
+  RETAINED
+  GRADUATED
+}
+
+// What kind of mark this is.
+//
+// Terms are no longer an enum — see `model ExamTerm`, which lets a school name
+// its own and belongs to the year it was set in.
 enum AssessmentType {
   QUIZ
   TEST
@@ -98,6 +132,11 @@ model Plan {
   isActive    Boolean  @default(true)
   createdAt   DateTime @default(now())
 
+  /// Per-provider price identifiers, e.g. { "STRIPE": "price_123" }.
+  /// JSON rather than a column per provider so adding Safepay or PayFast is a
+  /// data change, not another migration.
+  providerPriceIds Json?
+
   institutes            Institute[]
   subscriptionInvoices  SubscriptionInvoice[]
 
@@ -129,6 +168,13 @@ model Institute {
   /// IANA zone. Calendar dates (attendance, fee periods) resolve against this,
   /// not the server clock, so a UTC host doesn't shift "today" for the school.
   timezone          String          @default("Asia/Karachi")
+  /// The name of the session the school is currently running, e.g. 2026-27.
+  ///
+  /// Kept as a denormalised mirror of the `AcademicSession` row whose
+  /// `isCurrent` is true — everything that only needs the name still reads this
+  /// one column instead of joining. One service moves both together; nothing
+  /// else writes it.
+  currentSession    String          @default("2026-27")
   status            InstituteStatus @default(PENDING)
   planId            String
   defaultMonthlyFee Int             @default(0) // PKR, used when generating student invoices
@@ -140,6 +186,23 @@ model Institute {
   /// Always read through effectiveStudentLimit() — never plan.maxStudents.
   studentLimit      Int?
 
+  // ── Billing ────────────────────────────────────────────────────────
+  /// Which gateway collects money for this institute, if any.
+  /// NONE and MANUAL are never gated on payment state: a school paying by
+  /// bank transfer, and every institute that predates billing, keeps working
+  /// exactly as before.
+  paymentProvider        PaymentProvider @default(NONE)
+  providerCustomerId     String?
+  providerSubscriptionId String?
+  /// Paid through this moment. Only ever set from a verified webhook, and
+  /// only ever moved forward — a late or replayed event cannot shorten it.
+  currentPeriodEnd       DateTime?
+  paymentStatus          PaymentStatus   @default(UNPAID)
+  /// When the newest billing event applied here was *emitted by the provider*.
+  /// Providers redeliver out of order, so this is what lets an older event be
+  /// recognised and ignored.
+  lastBillingEventAt     DateTime?
+
   /// Subscription lifecycle. Cancelling is end-of-period, not immediate:
   /// the school keeps working until subscriptionEndsAt, and no data is
   /// removed. Clearing both fields resumes the subscription.
@@ -149,6 +212,11 @@ model Institute {
   /// Per-institute notification preferences. JSON so a new toggle doesn't
   /// need a migration. Read through notificationSettings() for defaults.
   notificationSettings Json?
+  /// This school's own grading policy: the letter-grade bands it uses and the
+  /// percentage it passes at. JSON for the same reason notifications are — a
+  /// school that never touches it gets the platform defaults, and adding a band
+  /// needs no migration. Read through gradingPolicy() in utils/grading.js.
+  gradingSettings      Json?
   joinedAt          DateTime        @default(now())
   trialEndsAt       DateTime?
   /// Soft delete. Set instead of removing the row, so a mistaken deletion is
@@ -160,12 +228,15 @@ model Institute {
   plan                 Plan                  @relation(fields: [planId], references: [id])
   users                User[]
   students             Student[]
+  promotions           StudentPromotion[]
+  academicSessions     AcademicSession[]
   teachers             Teacher[]
   parents              Parent[]
   subjects             Subject[]
   attendance           Attendance[]
   feeInvoices          FeeInvoice[]
   timetableSlots       TimetableSlot[]
+  academicClasses      AcademicClass[]
   messages             Message[]
   notices              Notice[]
   subscriptionInvoices SubscriptionInvoice[]
@@ -173,7 +244,49 @@ model Institute {
 
   @@index([status])
   @@index([planId])
+  /// Composite so the same identifier from two different gateways can't
+  /// collide. Postgres treats NULLs as distinct, so every institute that has
+  /// no provider yet coexists happily.
+  @@unique([paymentProvider, providerCustomerId])
+  @@unique([paymentProvider, providerSubscriptionId])
   @@map("institutes")
+}
+
+/// Which gateway, if any, collects money for an institute.
+enum PaymentProvider {
+  NONE // never billed online — the default, and every pre-billing institute
+  MANUAL // bank transfer, recorded by a super admin
+  STRIPE
+  SAFEPAY
+  PAYFAST
+}
+
+/// Billing state, derived only from verified provider webhooks.
+enum PaymentStatus {
+  UNPAID
+  TRIALING
+  ACTIVE
+  PAST_DUE
+  CANCELED
+}
+
+/// Every provider webhook this system has already acted on.
+///
+/// Gateways guarantee *at-least-once* delivery and retry aggressively, so the
+/// same event arrives more than once as a matter of course. Inserting the
+/// provider's own event id here before doing any work turns that into a
+/// unique-constraint violation, which is the whole of the idempotency story.
+model ProcessedWebhookEvent {
+  id          String          @id @default(cuid())
+  provider    PaymentProvider
+  eventId     String
+  type        String
+  instituteId String?
+  processedAt DateTime        @default(now())
+
+  @@unique([provider, eventId])
+  @@index([instituteId])
+  @@map("processed_webhook_events")
 }
 
 /// Monthly platform billing per institute — powers the Super Admin revenue view.
@@ -223,6 +336,7 @@ model User {
   createdNotices   Notice[]       @relation("NoticeAuthor")
   markedAttendance Attendance[]   @relation("AttendanceMarker")
   auditLogs        AuditLog[]
+  promotionsMade   StudentPromotion[]
 
   @@index([instituteId, role])
   @@map("users")
@@ -283,6 +397,7 @@ model Teacher {
   user           User?           @relation(fields: [userId], references: [id], onDelete: SetNull)
   subjects       Subject[]
   timetableSlots TimetableSlot[]
+  classesLed     AcademicClass[]
 
   @@unique([instituteId, code])
   @@index([instituteId])
@@ -338,6 +453,7 @@ model Student {
   institute   Institute    @relation(fields: [instituteId], references: [id], onDelete: Cascade)
   parent      Parent?      @relation(fields: [parentId], references: [id], onDelete: SetNull)
   enrollments Enrollment[]
+  promotions  StudentPromotion[]
   attendance  Attendance[]
   feeInvoices FeeInvoice[]
   aiInsights  AiInsight[]
@@ -377,10 +493,125 @@ model Subject {
 
 /// A student taking a subject. Holds the rolled-up performance figures
 /// the portals display (current vs previous term, letter grade, prediction).
+// One student's move at the end of a session.
+//
+// Promotion changes `Student.grade` and `Student.section` in place — that pair
+// is what the whole product treats as class membership — so without a record
+// of the move the previous class would simply be gone. This is that record:
+// what the student was, what they became, and who decided.
+// The academic year a school actually runs, with the dates it runs between.
+//
+// `Institute.currentSession` has always been a bare string — "2026-27" — with the
+// April-to-March convention living in a code comment rather than in data. That
+// made a whole class of question unanswerable: which session does an attendance
+// row belong to, or a fee period, or a mark? Nothing could say, because a session
+// had no boundary to compare a date against.
+//
+// It also cannot be one global rule. April-to-March is the common Pakistani
+// session, but Karachi and Cambridge-track schools commonly run August-to-July,
+// and a school that cannot state its own year cannot be given a correct result
+// card. So the dates belong to the school, not to the platform.
+model AcademicSession {
+  id          String   @id @default(cuid())
+  instituteId String
+  // How the school names it and how a result card is headed: "2026-27".
+  name        String
+  startsOn    DateTime
+  endsOn      DateTime
+  // Exactly one per institute, enforced in the service that moves it.
+  isCurrent   Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  institute   Institute    @relation(fields: [instituteId], references: [id], onDelete: Cascade)
+  enrollments Enrollment[]
+  examTerms   ExamTerm[]
+
+  @@unique([instituteId, name])
+  @@index([instituteId, isCurrent])
+  @@index([instituteId, startsOn])
+  @@map("academic_sessions")
+}
+
+// An examination term within one academic year.
+//
+// This replaced `enum AssessmentTerm { FIRST, MID, FINAL }`, which decided for
+// every school on the platform that a year has exactly three terms with those
+// names. Plenty of Pakistani schools run two — Half Yearly and Annual — and
+// some run four; a school that cannot name its own terms cannot produce its own
+// result card.
+//
+// Attached to the session rather than the institute, for the same reason
+// enrolments are: a school that moves from three terms to two must not lose the
+// terms last year's cards were written in.
+model ExamTerm {
+  id                String    @id @default(cuid())
+  academicSessionId String
+  /// The school's own words: "First Term", "Half Yearly", "Annual".
+  name              String
+  /// Where it falls in the year. 1, 2, 3 …
+  sequence          Int
+  /// This term's share of the annual result, as a percentage.
+  ///
+  /// Null means the school does not weight its terms, which is the common case
+  /// and the default: each term stands on its own and the annual card pools the
+  /// year's marks. A weighted year is one where every term carries a share and
+  /// they add up to 100.
+  weightage         Int?
+  /// Optional, and only ever used to pre-select the term when a mark is entered.
+  /// A term is never inferred from a date over a teacher's explicit choice.
+  startsOn          DateTime?
+  endsOn            DateTime?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  academicSession AcademicSession @relation(fields: [academicSessionId], references: [id], onDelete: Cascade)
+  assessments     Assessment[]
+
+  @@unique([academicSessionId, name])
+  @@unique([academicSessionId, sequence])
+  @@index([academicSessionId])
+  @@map("exam_terms")
+}
+
+model StudentPromotion {
+  id           String           @id @default(cuid())
+  studentId    String
+  instituteId  String
+  fromSession  String
+  toSession    String
+  fromGrade    String
+  fromSection  String
+  // Null when the student left at the top of the school.
+  toGrade      String?
+  toSection    String?
+  outcome      PromotionOutcome
+  notes        String?
+  promotedById String?
+  createdAt    DateTime         @default(now())
+
+  student    Student   @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  institute  Institute @relation(fields: [instituteId], references: [id], onDelete: Cascade)
+  promotedBy User?     @relation(fields: [promotedById], references: [id], onDelete: SetNull)
+
+  @@index([studentId])
+  @@index([instituteId, toSession])
+  @@map("student_promotions")
+}
+
 model Enrollment {
   id             String   @id @default(cuid())
   studentId      String
   subjectId      String
+  /// The academic year this enrolment belongs to.
+  ///
+  /// Required. It was nullable while existing rows were reconciled from evidence
+  /// — the marks under each enrolment, or failing that when it was created — and
+  /// became required once every row carried one and every write path assigned
+  /// one. A student now holds one enrolment per subject *per year*, which is what
+  /// lets a repeating student take the same subject again without overwriting
+  /// the year they are repeating.
+  academicSessionId String
   currentScore   Float? // 0-100
   previousScore  Float?
   predictedScore Float?
@@ -388,12 +619,16 @@ model Enrollment {
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 
-  student     Student      @relation(fields: [studentId], references: [id], onDelete: Cascade)
-  subject     Subject      @relation(fields: [subjectId], references: [id], onDelete: Cascade)
-  assessments Assessment[]
+  student         Student          @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  subject         Subject          @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+  /// Restrict, not Cascade: a year holding results must not be deletable out
+  /// from under them, and a year cannot be quietly detached from its enrolments.
+  academicSession AcademicSession  @relation(fields: [academicSessionId], references: [id], onDelete: Restrict)
+  assessments     Assessment[]
 
-  @@unique([studentId, subjectId])
+  @@unique([studentId, subjectId, academicSessionId])
   @@index([subjectId])
+  @@index([academicSessionId])
   @@map("enrollments")
 }
 
@@ -402,6 +637,13 @@ model Assessment {
   enrollmentId String
   title        String // "Quiz 3"
   type         AssessmentType @default(QUIZ)
+  /// Which examination term this mark belongs to, if any.
+  ///
+  /// Nullable on purpose: a class test in the middle of a term is a real mark
+  /// that belongs to no formal examination. SetNull rather than Cascade — a
+  /// school deleting a term it created by mistake must not take its marks with
+  /// it.
+  examTermId   String?
   obtained     Float
   total        Float
   takenOn      DateTime       @default(now())
@@ -410,8 +652,11 @@ model Assessment {
   updatedAt    DateTime       @updatedAt
 
   enrollment Enrollment @relation(fields: [enrollmentId], references: [id], onDelete: Cascade)
+  examTerm   ExamTerm?  @relation(fields: [examTermId], references: [id], onDelete: SetNull)
 
   @@index([enrollmentId])
+  @@index([enrollmentId, examTermId])
+  @@index([examTermId])
   @@index([takenOn])
   @@map("assessments")
 }
@@ -437,6 +682,45 @@ model Attendance {
   @@map("attendance")
 }
 
+// A class/section as the school actually names it — "Grade 8 A", "BSCS 3",
+// "LB3-101". Naming styles differ per institute, so nothing here is a fixed
+// format: `name` and `section` are free text and `code` is whatever the school
+// puts on the timetable.
+//
+// Deliberately NOT the owner of student membership. Students already carry
+// `grade` + `section`, and attendance registers, the gradebook, the teacher's
+// roster and the parent timetable all key off that pair. A `classId` on Student
+// would create a second source of truth that could silently disagree with the
+// first. Instead `name`/`section` mirror `Student.grade`/`section`, so a class's
+// roster is derived from the pair the rest of the app already trusts, and
+// assigning a student to a class simply updates their grade/section.
+model AcademicClass {
+  id             String   @id @default(cuid())
+  instituteId    String
+  name           String // mirrors Student.grade — "Grade 8", "BSCS"
+  section        String // mirrors Student.section — "A", "3"
+  code           String // "LB3-101", "8A"
+  academicYear   String // "2026-27"
+  room           String?
+  description    String?
+  isArchived     Boolean  @default(false)
+  classTeacherId String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  institute      Institute       @relation(fields: [instituteId], references: [id], onDelete: Cascade)
+  classTeacher   Teacher?        @relation(fields: [classTeacherId], references: [id], onDelete: SetNull)
+  timetableSlots TimetableSlot[]
+
+  // A code identifies one class within a year; the same code may be reused in
+  // a later year, which is how schools actually work.
+  @@unique([instituteId, academicYear, code])
+  @@unique([instituteId, academicYear, name, section])
+  @@index([instituteId, isArchived])
+  @@index([classTeacherId])
+  @@map("academic_classes")
+}
+
 model TimetableSlot {
   id          String   @id @default(cuid())
   instituteId String
@@ -449,20 +733,52 @@ model TimetableSlot {
   startTime   String? // "08:00"
   endTime     String? // "08:45"
   room        String?
+  /// Nullable so the 60 rows that predate AcademicClass stay valid. New slots
+  /// created through the admin screen always carry one.
+  classId      String?
+  /// Nullable for the same reason. Absent means "not year-tagged", which the
+  /// year filter treats as matching everything rather than nothing.
+  academicYear String?
+  /// Free text the timetable shows alongside the subject — "double period",
+  /// "bring lab coats".
+  notes        String?
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
-  institute Institute @relation(fields: [instituteId], references: [id], onDelete: Cascade)
-  subject   Subject   @relation(fields: [subjectId], references: [id], onDelete: Cascade)
-  teacher   Teacher?  @relation(fields: [teacherId], references: [id], onDelete: SetNull)
+  institute     Institute      @relation(fields: [instituteId], references: [id], onDelete: Cascade)
+  subject       Subject        @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+  teacher       Teacher?       @relation(fields: [teacherId], references: [id], onDelete: SetNull)
+  academicClass AcademicClass? @relation(fields: [classId], references: [id], onDelete: SetNull)
 
   @@unique([instituteId, grade, section, dayOfWeek, period])
   @@index([instituteId, grade, section])
   @@index([teacherId])
+  @@index([classId])
   @@map("timetable_slots")
 }
 
 // ──────────────────────────── FINANCE ────────────────────────────
+
+// One line on a challan.
+//
+// `FeeInvoice.amount` stays the authoritative total and is kept equal to the
+// sum of these whenever any exist. Invoices raised before heads existed simply
+// have none, and go on behaving exactly as they did — which is why this is a
+// child table rather than a rewrite of the invoice.
+model FeeItem {
+  id        String   @id @default(cuid())
+  invoiceId String
+  head      FeeHead
+  // Only when the head alone is not specific enough, e.g. "Transport — Route 3".
+  label     String?
+  amount    Int
+  createdAt DateTime @default(now())
+
+  invoice FeeInvoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+
+  @@index([invoiceId])
+  @@map("fee_items")
+}
 
 model FeeInvoice {
   id          String    @id @default(cuid())
@@ -485,6 +801,7 @@ model FeeInvoice {
 
   student   Student   @relation(fields: [studentId], references: [id], onDelete: Cascade)
   institute Institute @relation(fields: [instituteId], references: [id], onDelete: Cascade)
+  items     FeeItem[]
 
   @@unique([studentId, period])
   @@index([instituteId, status])

@@ -3,7 +3,7 @@ import request from "supertest";
 import app from "../src/app.js";
 import { prismaRaw } from "../src/config/prisma.js";
 import { accessBlock, hasExpired } from "../src/utils/subscription.js";
-import { notificationEnabled, notificationSettings } from "../src/utils/notifications.js";
+import { NOTIFICATION_PREFS, notificationEnabled, notificationSettings } from "../src/utils/notifications.js";
 import { expireLapsedSubscriptions } from "../src/services/maintenance.service.js";
 
 /**
@@ -151,8 +151,18 @@ describe("notification preferences", () => {
     const res = await as(adminToken).get("/api/institutes/me/notifications");
     expect(res.status).toBe(200);
     const byKey = Object.fromEntries(res.body.data.map((p) => [p.key, p.enabled]));
-    expect(byKey.feeReminders).toBe(true);
-    expect(byKey.noticeEmails).toBe(false);
+
+    /**
+     * Checked against the declared defaults rather than a list written out
+     * here. This test used to pin `noticeEmails: false` — a preference that
+     * turned out to control nothing and has since been removed — so hard-coded
+     * keys were how a dead toggle stayed pinned in place.
+     */
+    for (const pref of NOTIFICATION_PREFS) {
+      expect(byKey, `${pref.key} missing from the response`).toHaveProperty(pref.key);
+      expect(byKey[pref.key], `${pref.key} default`).toBe(pref.default);
+    }
+
     // Each toggle states what it actually controls.
     expect(res.body.data.every((p) => p.controls)).toBe(true);
   });

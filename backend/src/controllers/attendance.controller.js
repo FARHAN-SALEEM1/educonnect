@@ -6,6 +6,7 @@ import { audit } from "../utils/audit.js";
 import { attendanceSummary } from "../utils/academics.js";
 import { studentScopeWhere } from "../utils/access.js";
 import { DEFAULT_TIMEZONE, toStoredDate, todayIn } from "../utils/dates.js";
+import { alertGuardiansOfAbsence, newlyAbsent } from "../services/absence.service.js";
 
 /**
  * Every date in this controller is a calendar date in the *institute's*
@@ -18,6 +19,29 @@ const zoneFor = async (instituteId) => {
     select: { timezone: true },
   });
   return inst?.timezone || DEFAULT_TIMEZONE;
+};
+
+/**
+ * A register cannot be taken for a day that has not happened yet.
+ *
+ * Checked here rather than in the schema because it is only decidable in the
+ * *institute's* timezone: at 01:00 in Karachi the school's calendar date is
+ * already tomorrow in UTC, so a rule comparing against the server clock would
+ * refuse a legitimate register. `todayIn` resolves the school's own date,
+ * which makes this exact rather than an approximation with slack in it.
+ *
+ * Why it is worth a guard: typing 2027 for 2026 is one keystroke, and an
+ * April–March session changes year mid-year, so it is a keystroke people get
+ * wrong. The resulting row is then invisible on the session-scoped result card
+ * while still counting towards the attendance summary — two screens giving two
+ * different answers for one student, with nothing naming the cause.
+ */
+const refuseFutureDay = (day, tz) => {
+  if (day.getTime() > todayIn(tz).getTime()) {
+    throw ApiError.badRequest(
+      `Attendance cannot be marked for ${day.toISOString().slice(0, 10)}, which is in the future`
+    );
+  }
 };
 
 /** GET /api/attendance */
@@ -112,6 +136,11 @@ export const markOne = asyncHandler(async (req, res) => {
   if (!student) throw ApiError.notFound("Student not found in this institute");
 
   const day = toStoredDate(date, student.institute.timezone);
+  refuseFutureDay(day, student.institute.timezone);
+
+  // Asked before the write, so correcting a mark that was already ABSENT
+  // does not tell the guardian a second time.
+  const fresh = await newlyAbsent({ records: [{ studentId, status }], date: day });
 
   const record = await prisma.attendance.upsert({
     where: { studentId_date: { studentId, date: day } },
@@ -127,7 +156,19 @@ export const markOne = asyncHandler(async (req, res) => {
     include: { student: { select: { name: true } } },
   });
 
-  return created(res, record, `${record.student.name} marked ${status.toLowerCase()}`);
+  const alerts = await alertGuardiansOfAbsence({
+    instituteId: student.instituteId,
+    studentIds: fresh,
+    date: day,
+    actorId: req.user.id,
+  });
+
+  return created(
+    res,
+    { ...record, guardiansNotified: alerts.notified },
+    `${record.student.name} marked ${status.toLowerCase()}` +
+      (alerts.notified ? ". Guardian notified." : "")
+  );
 });
 
 /**
@@ -140,6 +181,7 @@ export const markBulk = asyncHandler(async (req, res) => {
   const { date, records } = req.body;
   const tz = await zoneFor(req.instituteId);
   const day = toStoredDate(date, tz);
+  refuseFutureDay(day, tz);
 
   const studentIds = records.map((r) => r.studentId);
   const students = await prisma.student.findMany({
@@ -148,12 +190,35 @@ export const markBulk = asyncHandler(async (req, res) => {
   });
 
   const valid = new Map(students.map((s) => [s.id, s.instituteId]));
-  const accepted = records.filter((r) => valid.has(r.studentId));
+  /**
+   * One row per student, and the last word wins.
+   *
+   * The register is unique on (student, day), so sending the same child
+   * twice writes a single row — but both were counted, so a class of thirty
+   * came back as "31 marked", and a child sent PRESENT and then ABSENT was
+   * added to each total while only the second was stored. A Map keyed on the
+   * student keeps the last entry, which is the one the upsert leaves behind,
+   * so what is reported is what was saved.
+   */
+  const accepted = [
+    ...new Map(
+      records.filter((r) => valid.has(r.studentId)).map((r) => [r.studentId, r])
+    ).values(),
+  ];
   const rejected = records
     .filter((r) => !valid.has(r.studentId))
     .map((r) => ({ studentId: r.studentId, reason: "not found in this institute" }));
 
   if (!accepted.length) throw ApiError.badRequest("No valid students in this request", rejected);
+
+  /**
+   * Who is newly absent, decided before the register is written.
+   *
+   * A teacher saves the register, spots one wrong mark and saves again — the
+   * second save must not re-announce every absence of the day. Only students
+   * whose stored status actually changes to ABSENT are announced.
+   */
+  const fresh = await newlyAbsent({ records: accepted, date: day });
 
   await prisma.$transaction(
     accepted.map((r) =>
@@ -178,6 +243,20 @@ export const markBulk = asyncHandler(async (req, res) => {
     meta: { date: day, marked: accepted.length, rejected: rejected.length },
   });
 
+  /**
+   * Notification never fails the register.
+   *
+   * The register is the record of truth. An alert that could not go out is a
+   * smaller problem than a day of attendance that would not save, so this is
+   * awaited for an honest count but can never throw past here.
+   */
+  const alerts = await alertGuardiansOfAbsence({
+    instituteId: req.instituteId,
+    studentIds: fresh,
+    date: day,
+    actorId: req.user.id,
+  }).catch(() => ({ notified: 0, recipients: [], skipped: [], reason: "alert-failed" }));
+
   const counts = accepted.reduce((acc, r) => {
     acc[r.status] = (acc[r.status] || 0) + 1;
     return acc;
@@ -185,8 +264,23 @@ export const markBulk = asyncHandler(async (req, res) => {
 
   return created(
     res,
-    { date: day, marked: accepted.length, rejected, counts },
-    `Attendance saved for ${accepted.length} student(s)`
+    {
+      date: day,
+      marked: accepted.length,
+      rejected,
+      counts,
+      absencesAnnounced: fresh.length,
+      guardiansNotified: alerts.notified,
+      guardiansMissing: alerts.skipped,
+    },
+    `Attendance saved for ${accepted.length} student(s)` +
+      (alerts.notified
+        ? `. ${alerts.notified} guardian(s) told about ${fresh.length} absence(s).`
+        : alerts.reason === "attendance-alerts-off" && fresh.length
+          ? `. ${fresh.length} absence(s) not announced — attendance alerts are off.`
+          : alerts.skipped?.length
+            ? `. ${alerts.skipped.length} absent student(s) have no guardian linked.`
+            : "")
   );
 });
 

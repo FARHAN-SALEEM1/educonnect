@@ -60,9 +60,10 @@ services:
       - key: APP_URL
         sync: false
 
-      # Optional — leave unset and emails print to the service logs instead
-      # of being sent. Password reset still works; you just read the link
-      # from the logs rather than an inbox.
+      # REQUIRED in production — the server refuses to start without
+      # SMTP_HOST and SMTP_FROM. Without them a password-reset link would only
+      # ever reach the service log: nobody could reset a password, and live
+      # reset tokens would sit in log aggregation for anyone with log access.
       - key: SMTP_HOST
         sync: false
       - key: SMTP_PORT
@@ -71,6 +72,14 @@ services:
         sync: false
       - key: SMTP_PASS
         sync: false
+      - key: SMTP_FROM
+        sync: false
+
+      # Billing. `manual` = bank transfer recorded by a super admin, which is
+      # the current production default. Selecting a gateway makes its secrets
+      # required at startup. See DEPLOYMENT.md § Payments.
+      - key: PAYMENT_PROVIDER
+        value: manual
 
   # ── Frontend ───────────────────────────────────────────────────────
   - type: web

@@ -7,16 +7,27 @@ import { nextTeacherCode } from "../utils/codes.js";
 import crypto from "node:crypto";
 import { hashPassword } from "../utils/password.js";
 import { audit } from "../utils/audit.js";
-import { emailEnabled, sendWelcome } from "../services/email.service.js";
+import { sendWelcome, notSent, undeliveredReason } from "../services/email.service.js";
 import { notificationEnabled } from "../utils/notifications.js";
 import { attendanceSummary, averageScore } from "../utils/academics.js";
+import { policyFor } from "../services/grading.service.js";
+import { liveEnrolmentFilter, readSessionId, sessionFilter } from "../services/session.service.js";
 
 /** Counts the distinct grade-sections and students a teacher is responsible for. */
 const teacherWorkload = async (teacherId) => {
+  // Only the year the school is running. A workload counting last year's classes
+  // would tell a teacher they hold twice what they do.
+  const teacher = await prisma.teacher.findUnique({
+    where: { id: teacherId },
+    select: { instituteId: true },
+  });
+  const sessionId = await readSessionId(teacher?.instituteId);
+
   const subjects = await prisma.subject.findMany({
     where: { teacherId },
     include: {
       enrollments: {
+        where: liveEnrolmentFilter(sessionId),
         include: { student: { select: { id: true, grade: true, section: true } } },
       },
     },
@@ -126,12 +137,25 @@ export const getTeacher = asyncHandler(async (req, res) => {
  * teacher owns, with the class average computed from live enrollments.
  */
 export const myClasses = asyncHandler(async (req, res) => {
+  /**
+   * The school's own scale, not the platform's — the same letters the
+   * result card prints, so a teacher and a parent read one grade.
+   *
+   * Taken from the signed-in teacher, not req.instituteId: this route scopes
+   * itself by the teacher profile and never runs scopeToInstitute, so that
+   * field is undefined here and the policy fell back to the platform default —
+   * which is the very bug this whole change is about, one route further in.
+   */
+  const grading = await policyFor(req.user.instituteId);
   if (!req.user.teacherId) throw ApiError.forbidden("No teacher profile linked to your account");
+
+  const rosterSessionId = await readSessionId(req.instituteId);
 
   const subjects = await prisma.subject.findMany({
     where: { teacherId: req.user.teacherId },
     include: {
       enrollments: {
+        where: liveEnrolmentFilter(rosterSessionId),
         include: {
           student: {
             select: { id: true, name: true, grade: true, section: true, rollNo: true, code: true },
@@ -198,7 +222,8 @@ export const myClasses = asyncHandler(async (req, res) => {
           enrollmentId: e.id,
           score: e.currentScore,
           previousScore: e.previousScore,
-          letterGrade: e.letterGrade,
+          // The live policy, not the letter cached when this was last marked.
+          letterGrade: grading.letterGrade(e.currentScore),
           attendanceRate: attendanceSummary(attendanceByStudent.get(e.student.id) ?? []).rate,
         })),
       });
@@ -260,27 +285,34 @@ export const createTeacher = asyncHandler(async (req, res) => {
   });
 
   // Honours the "Welcome emails" toggle rather than always sending.
-  if (createLogin && !password && notificationEnabled(institute, "welcomeEmails")) {
-    await sendWelcome({
-      to: teacher.email,
-      name: teacher.name,
-      role: "teacher",
-      instituteName: institute?.name ?? "EduConnect",
-      tempPassword,
-      loginUrl: `${env.appUrl}/`,
-    });
-  }
+  //
+  // The result is kept, not discarded. A generated password that was never
+  // delivered has to be shown on screen instead — otherwise the account exists
+  // and nobody, including the admin who just created it, knows how to sign in.
+  const needsMail = createLogin && !password;
+  const delivery = !needsMail
+    ? notSent("not-applicable")
+    : !notificationEnabled(institute, "welcomeEmails")
+      ? notSent("welcome-emails-off")
+      : await sendWelcome({
+          to: teacher.email,
+          name: teacher.name,
+          role: "teacher",
+          instituteName: institute?.name ?? "EduConnect",
+          tempPassword,
+          loginUrl: `${env.appUrl}/`,
+        });
 
   return created(
     res,
-    { ...teacher, emailed: createLogin && !password && emailEnabled() },
+    { ...teacher, emailed: delivery.delivered },
     !createLogin
       ? `${teacher.name} added`
       : password
         ? `${teacher.name} added with the password you set.`
-        : emailEnabled()
+        : delivery.delivered
           ? `${teacher.name} added — sign-in details sent to ${teacher.email}.`
-          : `${teacher.name} added. Temporary password: ${tempPassword} (no mail server configured).`
+          : `${teacher.name} added. Temporary password: ${tempPassword} (${undeliveredReason(delivery.reason)}).`
   );
 });
 
@@ -339,8 +371,25 @@ export const deleteTeacher = asyncHandler(async (req, res) => {
 
   // Soft delete: the teacher disappears from the school, but their marks and
   // the audit trail of who recorded them stay intact.
+  /**
+   * Everything that named them has to stop naming them.
+   *
+   * Only subjects were released here, so the periods they taught kept pointing
+   * at them. A soft delete never fires the schema own onDelete: SetNull, and
+   * the timetable reads the teacher through a nested include, which the
+   * soft-delete extension does not reach — so the schedule went on printing
+   * someone who had left, and conflictsFor matches the scalar teacherId, so it
+   * went on defending their periods against the colleague taking over.
+   */
+  let freedPeriods = 0;
   await prisma.$transaction(async (tx) => {
     await tx.subject.updateMany({ where: { teacherId: teacher.id }, data: { teacherId: null } });
+    freedPeriods = (
+      await tx.timetableSlot.updateMany({
+        where: { teacherId: teacher.id },
+        data: { teacherId: null },
+      })
+    ).count;
     await tx.teacher.update({
       where: { id: teacher.id },
       data: { deletedAt: new Date(), isActive: false },
@@ -356,10 +405,17 @@ export const deleteTeacher = asyncHandler(async (req, res) => {
     action: "teacher.delete",
     entity: "Teacher",
     entityId: teacher.id,
-    meta: { name: teacher.name, soft: true },
+    meta: { name: teacher.name, soft: true, freedPeriods },
   });
 
-  return ok(res, null, `${teacher.name} removed. Their subjects are now unassigned.`);
+  return ok(
+    res,
+    null,
+    `${teacher.name} removed. Their subjects are now unassigned` +
+      (freedPeriods
+        ? `, and ${freedPeriods} timetable period(s) now need a teacher.`
+        : ".")
+  );
 });
 
 /** GET /api/teachers/deleted */

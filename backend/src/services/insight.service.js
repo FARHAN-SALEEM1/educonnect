@@ -1,4 +1,5 @@
 import { prisma } from "../config/prisma.js";
+import { readSessionId, sessionFilter } from "./session.service.js";
 import { attendanceSummary, predictScore } from "../utils/academics.js";
 
 /**
@@ -21,10 +22,20 @@ import { attendanceSummary, predictScore } from "../utils/academics.js";
 const SEVERITY = { INFO: 1, WATCH: 2, ACTION: 3 };
 
 export async function generateInsightsForStudent(studentId) {
+  // The school this student belongs to, so the year can be read from it.
+  const owner = await prisma.student.findUnique({
+    where: { id: studentId },
+    select: { instituteId: true },
+  });
+  const sessionId = await readSessionId(owner?.instituteId);
+
   const student = await prisma.student.findUnique({
     where: { id: studentId },
     include: {
       enrollments: {
+        // This year's subjects. An insight drawn from a class the student
+        // has already left is advice about the past.
+        where: sessionFilter(sessionId),
         include: {
           subject: true,
           assessments: { orderBy: { takenOn: "desc" }, take: 5 },

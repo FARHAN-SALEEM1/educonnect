@@ -68,8 +68,26 @@ export const hasExpired = (institute) =>
   );
 
 /**
+ * A free trial whose window has closed.
+ *
+ * `trialEndsAt` was written at signup and then read nowhere, so every trial
+ * ran forever. A null date means the institute is not on a trial at all —
+ * either it never was (seeded and platform-created schools) or it has been
+ * converted — and such an institute is never blocked by this rule.
+ *
+ * Like `hasExpired`, this is computed from the date on every request rather
+ * than trusted from a stored status, so it takes effect the moment the window
+ * closes instead of whenever the background sweep next runs.
+ */
+export const hasTrialExpired = (institute) =>
+  Boolean(institute?.trialEndsAt && institute.trialEndsAt <= new Date());
+
+/**
  * The single source of truth for "can this institute be used right now".
  * Returns null when access is fine, or a { status, message } to block with.
+ *
+ * Order matters: a school that is suspended or closed is told that, not that
+ * its trial lapsed, and an unapproved signup is never described as "expired".
  */
 export const accessBlock = (institute) => {
   if (!institute) return { status: "MISSING", message: "Your institute no longer exists" };
@@ -86,6 +104,18 @@ export const accessBlock = (institute) => {
       message: "Your institute account has been closed. Please contact the administrator.",
     };
   }
+  // Self-service signups land in PENDING and must stay locked until a super
+  // admin approves them. Without this branch the approval step existed in the
+  // schema and in the signup comment but nowhere in the code: a brand-new
+  // signup could log in and read and write immediately, on whichever plan it
+  // had picked for itself.
+  if (institute.status === "PENDING") {
+    return {
+      status: "PENDING",
+      message:
+        "Your institute is awaiting approval. You'll be able to sign in once the EduConnect team activates it.",
+    };
+  }
   if (institute.status === "EXPIRED" || hasExpired(institute)) {
     return {
       status: "EXPIRED",
@@ -93,7 +123,47 @@ export const accessBlock = (institute) => {
         "Your subscription has expired. Please renew it from the admin portal, or contact the administrator.",
     };
   }
+  if (hasTrialExpired(institute)) {
+    return {
+      status: "TRIAL_EXPIRED",
+      message:
+        "Your free trial has ended. Please subscribe to continue, or contact the administrator.",
+    };
+  }
+  if (hasLapsedPayment(institute)) {
+    return {
+      status: "PAYMENT_REQUIRED",
+      message:
+        "We couldn't take payment for this period. Please update your payment details to continue.",
+    };
+  }
   return null;
+};
+
+/** Payment states that mean the gateway is not currently collecting money. */
+const UNPAID_STATES = new Set(["UNPAID", "PAST_DUE", "CANCELED"]);
+
+/**
+ * A gateway-billed institute whose paid period has run out.
+ *
+ * The guard on `paymentProvider` is the important part. Every institute that
+ * predates billing is `NONE`, and a school paying by bank transfer is
+ * `MANUAL`; both carry `paymentStatus: UNPAID` because nothing has ever set it,
+ * and neither must be locked out on that basis. Only an institute that
+ * genuinely signed up through a gateway is judged on payment state.
+ *
+ * Access also survives to `currentPeriodEnd` even after a failed payment —
+ * the school has already paid for that period, and cutting them off mid-month
+ * over a card that expired is both wrong and the fastest way to lose them.
+ */
+export const hasLapsedPayment = (institute) => {
+  const provider = institute?.paymentProvider;
+  if (!provider || provider === "NONE" || provider === "MANUAL") return false;
+  if (!UNPAID_STATES.has(institute?.paymentStatus)) return false;
+
+  // No period recorded yet means checkout never completed; nothing to protect.
+  if (!institute?.currentPeriodEnd) return false;
+  return institute.currentPeriodEnd <= new Date();
 };
 
 /** Statuses a super admin may still act on — nothing is hidden from them. */

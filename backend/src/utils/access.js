@@ -9,7 +9,22 @@ import { ApiError } from "./ApiError.js";
  * PARENT            — only their own children
  */
 export async function studentScopeWhere(req) {
-  const base = {};
+  /**
+   * A removed student is out of the school, and out of its reporting.
+   *
+   * `deletedAt` is spelt out here rather than left to the soft-delete
+   * extension, because most of this scope is used as a *nested* filter —
+   * `attendance.findMany({ where: { student: scope } })` — and the extension
+   * only rewrites the top-level where of a soft-deletable model. Attendance is
+   * not one, so nothing added it, and a student who had left kept counting:
+   * their absences stayed in the school attendance rate for good, while the
+   * student list they had vanished from disagreed with it.
+   *
+   * At the top level this is simply explicit rather than implicit; the
+   * extension hands an explicit `deletedAt` straight through. The recycle bin
+   * does not come through here — it asks for deleted rows by name.
+   */
+  const base = { deletedAt: null };
   if (req.instituteId) base.instituteId = req.instituteId;
 
   switch (req.user.role) {

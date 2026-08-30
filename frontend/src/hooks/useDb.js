@@ -37,12 +37,23 @@ const MAX_RECORDS = 5000;
  * than 200 students — and the Growth plan sells 800, so the product
  * contradicted itself with no error and no visible clue.
  */
-async function fetchAll(fn, params = {}) {
+export async function fetchAll(fn, params = {}) {
   const first = await fn({ ...params, page: 1, limit: PAGE_SIZE });
   const total = first.meta?.total ?? first.length;
   const rows = [...first];
 
-  if (total <= rows.length) return Object.assign(rows, { truncated: false, total });
+  /**
+   * `meta` is carried through deliberately. Spreading into a plain array drops
+   * the properties the client hangs off it, and some endpoints put figures
+   * there that are computed across the WHOLE table rather than the page —
+   * `subscription-invoices` returns a paid/pending summary that way. Losing it
+   * left the super admin's "Outstanding" tile reading a permanent Rs. 0 while
+   * six invoices sat unpaid, which is the kind of wrong that looks like good
+   * news. It comes from the first page because it does not vary by page.
+   */
+  if (total <= rows.length) {
+    return Object.assign(rows, { truncated: false, total, meta: first.meta });
+  }
 
   const capped = Math.min(total, MAX_RECORDS);
   const lastPage = Math.ceil(capped / PAGE_SIZE);
@@ -57,6 +68,7 @@ async function fetchAll(fn, params = {}) {
   return Object.assign(rows.slice(0, MAX_RECORDS), {
     truncated: total > MAX_RECORDS,
     total,
+    meta: first.meta,
   });
 }
 

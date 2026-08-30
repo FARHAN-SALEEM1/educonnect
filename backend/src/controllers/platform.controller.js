@@ -81,7 +81,11 @@ export const updateSettings = asyncHandler(async (req, res) => {
 export const updatePlan = asyncHandler(async (req, res) => {
   const plan = await prisma.plan.findUnique({
     where: { id: req.params.id },
-    include: { institutes: { select: { _count: { select: { students: true } } } } },
+    // Only live students may block a seat-cap reduction — counting removed
+    // ones would refuse a legitimate downgrade on seats nobody occupies.
+    include: {
+      institutes: { select: { _count: { select: { students: { where: { deletedAt: null } } } } } },
+    },
   });
   if (!plan) throw ApiError.notFound("Plan not found");
 

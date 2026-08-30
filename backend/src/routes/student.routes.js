@@ -5,6 +5,7 @@ import { validate } from "../middleware/validate.js";
 import {
   createStudentSchema,
   importStudentsSchema,
+  promoteStudentsSchema,
   studentQuery,
   updateStudentSchema,
 } from "../validators/people.schema.js";
@@ -32,6 +33,8 @@ router.post(
 router.get("/", validate(studentQuery, "query"), scopeToInstitute, ctrl.listStudents);
 router.get("/:id", scopeToInstitute, ctrl.getStudent);
 router.get("/:id/report", scopeToInstitute, ctrl.studentReport);
+// Class history — anyone who may read the student may read where they have been.
+router.get("/:id/promotions", scopeToInstitute, ctrl.studentPromotions);
 
 router.post(
   "/",
@@ -47,6 +50,15 @@ router.post(
   validate(importStudentsSchema),
   requireInstitute,
   ctrl.importStudents
+);
+
+// The end-of-session move. Bulk and in-place, so it is the admin's call.
+router.post(
+  "/promote",
+  authorize("SUPERADMIN", "ADMIN"),
+  validate(promoteStudentsSchema),
+  requireInstitute,
+  ctrl.promoteStudents
 );
 
 router.patch(

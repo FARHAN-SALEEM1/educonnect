@@ -178,16 +178,40 @@ async function request(path, { method = "GET", body, params, retry = true } = {}
 
   // Unwrap the API envelope; keep `meta` reachable for paginated callers.
   if (payload && typeof payload === "object" && "data" in payload) {
-    if (payload.meta) {
-      return Object.assign(
-        Array.isArray(payload.data) ? [...payload.data] : { ...payload.data },
-        { meta: payload.meta }
-      );
-    }
-    return payload.data;
+    const body = payload.meta
+      ? Object.assign(
+          Array.isArray(payload.data) ? [...payload.data] : { ...payload.data },
+          { meta: payload.meta }
+        )
+      : payload.data;
+    return withMessage(body, payload.message);
   }
   return payload;
 }
+
+/**
+ * Keeps the API's own success message reachable as `__message`.
+ *
+ * Only `data` used to survive this function, and some of those messages carry
+ * the only copy of something: a generated temporary password is emailed, and
+ * when there is no mail server the server hands it back in the message instead
+ * — deliberately, so whoever created the account can pass it on. That was being
+ * dropped here, which meant an account could be created that nobody, not even
+ * its creator, knew the password for.
+ *
+ * Non-enumerable on purpose. Responses get spread into request bodies and into
+ * component state all over this app; an ordinary property would ride along and
+ * change the shape of things that have nothing to do with it.
+ */
+const withMessage = (body, message) => {
+  if (!message || body === null || typeof body !== "object") return body;
+  Object.defineProperty(body, "__message", {
+    value: message,
+    enumerable: false,
+    configurable: true,
+  });
+  return body;
+};
 
 export const http = {
   get: (path, params) => request(path, { params }),

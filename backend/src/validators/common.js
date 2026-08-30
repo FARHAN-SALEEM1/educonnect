@@ -20,6 +20,38 @@ export const dateString = z
   .union([z.string().datetime(), z.string().regex(/^\d{4}-\d{2}-\d{2}$/), z.date()])
   .transform((v) => new Date(v));
 
+/** One day, in milliseconds. */
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * Rejects a date that lies in the future.
+ *
+ * A register cannot be taken for a day that has not happened and a paper
+ * cannot be sat before it is set — but this guard exists for the typo, not the
+ * principle. Typing 2027 for 2026 is one keystroke, and in an April–March
+ * session the year genuinely changes mid-year, so it is a keystroke people get
+ * wrong. The damage is quiet: the wrong row never reaches the session-scoped
+ * result card, yet still counts towards the attendance summary, so the two
+ * screens disagree about the same student and nothing points at the cause.
+ *
+ * The one-day tolerance is timezone correctness, not slack. Dates are stored
+ * at UTC midnight and PKT is UTC+5, so between 00:00 and 05:00 local the
+ * school's own calendar date is already tomorrow in UTC — comparing strictly
+ * would refuse a legitimate register. One day covers every real offset
+ * (UTC-12..UTC+14) and gives up nothing, because the mistake being caught is
+ * always months or years out, never hours.
+ */
+const notInFuture = (v) => new Date(v).getTime() <= Date.now() + DAY_MS;
+
+export const notFutureDate = (what) =>
+  dateString.refine(notInFuture, { message: `${what} cannot be in the future` });
+
+/** The same rule where the field is optional and may be explicitly null. */
+export const optionalNotFutureDate = (what) =>
+  optionalDate.refine((v) => v == null || notInFuture(v), {
+    message: `${what} cannot be in the future`,
+  });
+
 export const periodString = z
   .string()
   .regex(/^\d{4}-(0[1-9]|1[0-2])$/, "period must look like 2026-03");

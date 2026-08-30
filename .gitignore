@@ -35,3 +35,14 @@ _repair.mjs
 
 # Stray browser-preview artefacts
 preview-screenshot.png
+
+# Database dumps — these contain real student personal data.
+# Never commit them; keep them encrypted and off the repo host.
+backups/
+*.dump
+*.sql.gz
+
+# Captured webhook deliveries (SAFEPAY_CAPTURE_WEBHOOKS). Sandbox diagnostic
+# only: each line holds a payer's details and a valid gateway signature.
+# Delete them once the payload has been studied.
+*.webhooks.jsonl

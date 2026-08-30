@@ -13,3 +13,11 @@ Thumbs.db
 .vscode/
 prisma/migrations/dev.db*
 uploads/
+
+# Rollback files written by scripts/apply-score-decision.js
+backups/
+
+# Raw webhook captures — SAFEPAY_CAPTURE_WEBHOOKS writes here, and every test
+# run appends to it (611 entries and 378 kB by 2026-08-30). Generated output,
+# never source: the payloads worth keeping live in tests/fixtures/, redacted.
+capture.jsonl

@@ -24,13 +24,20 @@ export const NOTIFICATION_PREFS = [
     default: true,
     controls: "Marking a student absent",
   },
-  {
-    key: "noticeEmails",
-    label: "Email notices to parents",
-    description: "Emails a copy of each published notice to guardians.",
-    default: false,
-    controls: "Publishing a notice",
-  },
+  /**
+   * "Email notices to parents" used to sit here, and it controlled nothing.
+   *
+   * Nothing in the codebase read the key: publishing a notice sends no email
+   * and creates no message. An admin who turned it on believed guardians had
+   * been told about a holiday, an exam date or a fee deadline, and they had
+   * not — which is exactly the failure this file was written to end.
+   *
+   * Removed rather than implemented. Notices already reach guardians in the
+   * parent portal, and an email path added now could not be verified: there
+   * are no SMTP credentials, so it would ship as a second promise nobody had
+   * watched work. Add it back the day a `sendNotice` exists in
+   * `email.service.js` and something calls it.
+   */
   {
     key: "welcomeEmails",
     label: "Welcome emails",

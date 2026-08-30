@@ -7,9 +7,12 @@ import { nextParentCode } from "../utils/codes.js";
 import crypto from "node:crypto";
 import { hashPassword } from "../utils/password.js";
 import { audit } from "../utils/audit.js";
-import { emailEnabled, sendWelcome } from "../services/email.service.js";
+import { sendWelcome, notSent, undeliveredReason } from "../services/email.service.js";
 import { notificationEnabled } from "../utils/notifications.js";
-import { attendanceSummary, averageScore, calculateGpa } from "../utils/academics.js";
+import { attendanceSummary, averageScore } from "../utils/academics.js";
+import { policyFor } from "../services/grading.service.js";
+import { outstandingTotal } from "../utils/fees.js";
+import { readSessionId, sessionFilter } from "../services/session.service.js";
 
 /** GET /api/parents */
 export const listParents = asyncHandler(async (req, res) => {
@@ -53,12 +56,14 @@ export const listParents = asyncHandler(async (req, res) => {
 
 /** GET /api/parents/:id */
 export const getParent = asyncHandler(async (req, res) => {
+  // This year only: a GPA averaged across two years is a number about nothing.
+  const sessionId = await readSessionId(req.instituteId);
   const parent = await prisma.parent.findFirst({
     where: { id: req.params.id, ...(req.instituteId && { instituteId: req.instituteId }) },
     include: {
       students: {
         include: {
-          enrollments: { select: { currentScore: true } },
+          enrollments: { where: sessionFilter(sessionId), select: { currentScore: true } },
           feeInvoices: { where: { status: { in: ["PENDING", "OVERDUE"] } } },
         },
       },
@@ -69,6 +74,16 @@ export const getParent = asyncHandler(async (req, res) => {
 
   if (!parent) throw ApiError.notFound("Parent not found");
 
+  /**
+   * The school's own scale, not the platform's.
+   *
+   * Bands and the pass mark are set per school, but only the result card ever
+   * asked — so a school that moved A+ to 80 saw it on the card and nowhere
+   * else. Reading the live policy here also means a scale change shows up at
+   * once, instead of waiting for every subject to be recalculated.
+   */
+  const grading = await policyFor(parent.instituteId);
+
   return ok(res, {
     ...parent,
     students: parent.students.map((s) => ({
@@ -78,9 +93,9 @@ export const getParent = asyncHandler(async (req, res) => {
       grade: s.grade,
       section: s.section,
       rollNo: s.rollNo,
-      gpa: calculateGpa(s.enrollments),
+      gpa: grading.gpa(s.enrollments),
       average: averageScore(s.enrollments),
-      duesOutstanding: s.feeInvoices.reduce((sum, f) => sum + f.amount, 0),
+      duesOutstanding: outstandingTotal(s.feeInvoices),
       enrollments: undefined,
       feeInvoices: undefined,
     })),
@@ -95,11 +110,28 @@ export const getParent = asyncHandler(async (req, res) => {
 export const myChildren = asyncHandler(async (req, res) => {
   if (!req.user.parentId) throw ApiError.forbidden("No parent profile linked to your account");
 
+  const sessionId = await readSessionId(req.user.instituteId);
+  /**
+   * The school's own scale, not the platform's.
+   *
+   * Bands and the pass mark are set per school, but only the result card ever
+   * asked — so a school that moved A+ to 80 saw it on the card and nowhere
+   * else. Reading the live policy here also means a scale change shows up at
+   * once, instead of waiting for every subject to be recalculated.
+   */
+  const grading = await policyFor(req.user.instituteId);
   const students = await prisma.student.findMany({
     where: { parentId: req.user.parentId },
     include: {
-      enrollments: { include: { subject: { select: { name: true, color: true } } } },
-      feeInvoices: { orderBy: { period: "desc" } },
+      enrollments: {
+        where: sessionFilter(sessionId),
+        include: { subject: { select: { name: true, color: true } } },
+      },
+      feeInvoices: {
+        orderBy: { period: "desc" },
+        // The parent reads the breakdown; without it a challan is one bare number.
+        include: { items: { orderBy: { createdAt: "asc" } } },
+      },
       institute: { select: { id: true, name: true, logo: true, color: true } },
     },
     orderBy: { name: "asc" },
@@ -112,9 +144,7 @@ export const myChildren = asyncHandler(async (req, res) => {
         select: { status: true },
       });
 
-      const outstanding = s.feeInvoices
-        .filter((f) => f.status === "PENDING" || f.status === "OVERDUE")
-        .reduce((sum, f) => sum + (f.amount - f.discount + f.lateFee), 0);
+      const outstanding = outstandingTotal(s.feeInvoices);
 
       return {
         id: s.id,
@@ -125,7 +155,7 @@ export const myChildren = asyncHandler(async (req, res) => {
         rollNo: s.rollNo,
         photoUrl: s.photoUrl,
         institute: s.institute,
-        gpa: calculateGpa(s.enrollments),
+        gpa: grading.gpa(s.enrollments),
         average: averageScore(s.enrollments),
         subjectCount: s.enrollments.length,
         attendance: attendanceSummary(attendance),
@@ -188,27 +218,34 @@ export const createParent = asyncHandler(async (req, res) => {
   });
 
   // Honours the "Welcome emails" toggle rather than always sending.
-  if (createLogin && !password && notificationEnabled(institute, "welcomeEmails")) {
-    await sendWelcome({
-      to: parent.email,
-      name: parent.name,
-      role: "parent",
-      instituteName: institute?.name ?? "EduConnect",
-      tempPassword,
-      loginUrl: `${env.appUrl}/`,
-    });
-  }
+  //
+  // The result is kept, not discarded. A generated password that was never
+  // delivered has to be shown on screen instead — otherwise the account exists
+  // and nobody, including the admin who just created it, knows how to sign in.
+  const needsMail = createLogin && !password;
+  const delivery = !needsMail
+    ? notSent("not-applicable")
+    : !notificationEnabled(institute, "welcomeEmails")
+      ? notSent("welcome-emails-off")
+      : await sendWelcome({
+          to: parent.email,
+          name: parent.name,
+          role: "parent",
+          instituteName: institute?.name ?? "EduConnect",
+          tempPassword,
+          loginUrl: `${env.appUrl}/`,
+        });
 
   return created(
     res,
-    { ...parent, emailed: createLogin && !password && emailEnabled() },
+    { ...parent, emailed: delivery.delivered },
     !createLogin
       ? `${parent.name} added`
       : password
         ? `${parent.name} added with the password you set.`
-        : emailEnabled()
+        : delivery.delivered
           ? `${parent.name} added — sign-in details sent to ${parent.email}.`
-          : `${parent.name} added. Temporary password: ${tempPassword} (no mail server configured).`
+          : `${parent.name} added. Temporary password: ${tempPassword} (${undeliveredReason(delivery.reason)}).`
   );
 });
 

@@ -4,6 +4,7 @@ import { ApiError } from "../utils/ApiError.js";
 import { asyncHandler } from "../utils/asyncHandler.js";
 import { created, ok } from "../utils/response.js";
 import { comparePassword, hashPassword } from "../utils/password.js";
+import { PLAN_PUBLIC } from "../utils/publicFields.js";
 import {
   expiryDate,
   hashToken,
@@ -15,6 +16,7 @@ import {
 import crypto from "node:crypto";
 import { nextInstituteCode } from "../utils/codes.js";
 import { audit } from "../utils/audit.js";
+import { defaultSpan } from "../services/session.service.js";
 import { sendPasswordChanged, sendPasswordReset } from "../services/email.service.js";
 import { accessBlock } from "../utils/subscription.js";
 import { periodKey } from "../utils/academics.js";
@@ -48,13 +50,19 @@ const publicUser = (user) => ({
 /**
  * Mints a session.
  *
- * The refresh token goes into an httpOnly cookie so JavaScript — and
- * therefore any XSS bug — can never read it. The short-lived access token is
- * still returned in the body for the client to hold in memory.
+ * The refresh token goes into an httpOnly cookie and is returned **nowhere
+ * else**. The cookie is the only channel, in both directions: JavaScript
+ * cannot read it, so an XSS bug cannot lift a long-lived session. Only the
+ * short-lived access token comes back in the body, for the client to hold in
+ * memory.
  *
- * Non-browser clients (a mobile app, curl, the test suite) can opt out with
- * `?tokenInBody=1` and get the refresh token in the response instead; they
- * have no cookie jar and no XSS surface to protect.
+ * There used to be an opt-out — `?tokenInBody=1` — meant for clients with no
+ * cookie jar. Because it was a plain query parameter, injected script could
+ * ask for it too: one `fetch("/api/auth/refresh?tokenInBody=1", {credentials:
+ * "include"})` handed the attacker a seven-day credential and the httpOnly
+ * cookie became decorative. A real non-browser client needs a deliberate
+ * auth flow, not a switch any caller can flip, so the opt-out is gone rather
+ * than merely restricted.
  */
 const issueSession = async (user, req, res) => {
   const accessToken = signAccessToken(user);
@@ -72,13 +80,18 @@ const issueSession = async (user, req, res) => {
 
   res.cookie(env.cookie.name, refreshToken, refreshCookieOptions());
 
-  const wantsBodyToken = req.query.tokenInBody === "1" || req.body?.tokenInBody === true;
-  return wantsBodyToken ? { accessToken, refreshToken } : { accessToken };
+  return { accessToken };
 };
 
-/** The refresh token, from the cookie or — for API clients — the body. */
-const readRefreshToken = (req) =>
-  req.cookies?.[env.cookie.name] || req.body?.refreshToken || null;
+/**
+ * The refresh token, from the httpOnly cookie and nowhere else.
+ *
+ * The body was accepted here as the inbound half of the opt-out above. With
+ * nothing ever handing a token out, no legitimate caller can put one in a
+ * body — and accepting one would let a token leaked by any other route be
+ * replayed from any origin, sidestepping the cookie's SameSite protection.
+ */
+const readRefreshToken = (req) => req.cookies?.[env.cookie.name] || null;
 
 const clearRefreshCookie = (res) => {
   const { maxAge: _ignored, ...options } = refreshCookieOptions();
@@ -86,7 +99,7 @@ const clearRefreshCookie = (res) => {
 };
 
 const USER_INCLUDE = {
-  institute: { include: { plan: true } },
+  institute: { include: { plan: { select: PLAN_PUBLIC } } },
   teacher: { select: { id: true } },
   parent: { select: { id: true } },
 };
@@ -131,7 +144,23 @@ export const signup = asyncHandler(async (req, res) => {
   const {
     name, city, phone, email, address, approxStudents, studentLimit, planId,
     adminName, adminEmail, adminPhone, adminPassword,
+    sessionStartMonth, passingPercentage, terms,
   } = req.body;
+
+  /**
+   * A term list with two entries called the same thing is not a year.
+   * Caught here rather than at the unique constraint, so the school is told
+   * which name it repeated instead of being handed a database error.
+   */
+  const wanted = terms?.map((t) => t.trim()).filter(Boolean) ?? null;
+  if (wanted) {
+    const seen = new Set();
+    for (const t of wanted) {
+      const key = t.toLowerCase();
+      if (seen.has(key)) throw ApiError.badRequest(`Two terms are both called "${t}"`);
+      seen.add(key);
+    }
+  }
 
   const [existingInstitute, existingUser] = await Promise.all([
     prisma.institute.findUnique({ where: { email } }),
@@ -165,11 +194,16 @@ export const signup = asyncHandler(async (req, res) => {
           studentLimit != null ? Math.min(studentLimit, plan.maxStudents) : null,
         planId,
         logo: "🏫",
+        // Only written when the school said something; a school that did not
+        // gets the platform default, exactly as before.
+        ...(passingPercentage !== undefined && {
+          gradingSettings: { passingPercentage },
+        }),
         // New signups start PENDING; a super admin activates them.
         status: "PENDING",
         trialEndsAt: new Date(Date.now() + trialDays * 24 * 60 * 60 * 1000),
       },
-      include: { plan: true },
+      include: { plan: { select: PLAN_PUBLIC } },
     });
 
     const admin = await tx.user.create({
@@ -183,6 +217,41 @@ export const signup = asyncHandler(async (req, res) => {
       },
       include: USER_INCLUDE,
     });
+
+    /**
+     * The school's first academic year, created with the school.
+     *
+     * A session that only appears when somebody opens Settings would mean every
+     * list and every card had to be prepared to create one — and a read that can
+     * write is a read that serialises. Making it at birth keeps every later
+     * lookup a plain read.
+     */
+    // April unless the school said otherwise — Karachi and Cambridge-track
+    // schools commonly run August to July, and that is not a platform choice.
+    const span = defaultSpan(institute.currentSession, sessionStartMonth ?? 4);
+    if (span) {
+      const session = await tx.academicSession.create({
+        data: { instituteId: institute.id, name: institute.currentSession, ...span, isCurrent: true },
+      });
+
+      /**
+       * The year's terms, named by the school at the point it is asked.
+       *
+       * Created here rather than left to `ensureTerms` so a school that runs
+       * two terms never has three defaults appear and have to be cleaned up.
+       * Unweighted: a share is a policy the school states deliberately, and
+       * signup is not the place to hold it to one.
+       */
+      if (wanted?.length) {
+        await tx.examTerm.createMany({
+          data: wanted.map((termName, i) => ({
+            academicSessionId: session.id,
+            name: termName,
+            sequence: i + 1,
+          })),
+        });
+      }
+    }
 
     await tx.subscriptionInvoice.create({
       data: {
@@ -240,6 +309,43 @@ export const refresh = asyncHandler(async (req, res) => {
   const stored = await prisma.refreshToken.findUnique({
     where: { tokenHash: hashToken(refreshToken) },
   });
+
+  /**
+   * Reuse detection.
+   *
+   * Rotation means a token is revoked the moment it is exchanged, so a
+   * *revoked but not expired* token being presented again has only two
+   * explanations: the legitimate client replayed one it should have discarded,
+   * or someone else is holding a copy. Both mean the family can no longer be
+   * trusted, so every live session for that account is revoked and whoever it
+   * was has to sign in again with the password.
+   *
+   * This is why the maintenance sweep keeps revoked rows for a week rather
+   * than deleting them on revocation — without the row, a stolen token is
+   * indistinguishable from a made-up one and the theft is invisible.
+   */
+  if (stored?.revokedAt && stored.expiresAt >= new Date()) {
+    const { count } = await prisma.refreshToken.updateMany({
+      where: { userId: stored.userId, revokedAt: null },
+      data: { revokedAt: new Date() },
+    });
+
+    console.warn(
+      `[security] refresh token reuse for user ${stored.userId} from ${req.ip} — ` +
+        `revoked ${count} live session(s)`
+    );
+    audit(req, {
+      action: "auth.refresh_reuse",
+      entity: "User",
+      entityId: stored.userId,
+      meta: { revokedSessions: count, userAgent: req.headers["user-agent"]?.slice(0, 240) ?? null },
+    });
+
+    clearRefreshCookie(res);
+    throw ApiError.unauthorized(
+      "This session has been ended for security. Please sign in again."
+    );
+  }
 
   if (!stored || stored.revokedAt || stored.expiresAt < new Date()) {
     clearRefreshCookie(res);

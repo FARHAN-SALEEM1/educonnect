@@ -7,6 +7,7 @@ import {
   feeQuery,
   generateInvoicesSchema,
   payInvoiceSchema,
+  updateInvoiceSchema,
 } from "../validators/ops.schema.js";
 
 const router = Router();
@@ -57,7 +58,13 @@ router.post(
   ctrl.payInvoice
 );
 
-router.patch("/:id", authorize("SUPERADMIN", "ADMIN"), scopeToInstitute, ctrl.updateInvoice);
+router.patch(
+  "/:id",
+  authorize("SUPERADMIN", "ADMIN"),
+  validate(updateInvoiceSchema),
+  scopeToInstitute,
+  ctrl.updateInvoice
+);
 router.delete("/:id", authorize("SUPERADMIN", "ADMIN"), scopeToInstitute, ctrl.deleteInvoice);
 
 export default router;

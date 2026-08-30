@@ -46,7 +46,19 @@ export const authenticate = asyncHandler(async (req, _res, next) => {
   if (user.instituteId) {
     const institute = await prisma.institute.findUnique({
       where: { id: user.instituteId },
-      select: { status: true, name: true, cancelAtPeriodEnd: true, subscriptionEndsAt: true },
+      // Every field `accessBlock` reads must be selected here. `trialEndsAt`
+      // was missing, so a trial check would have passed `undefined` and gone
+      // quietly dead on the per-request path while still firing at login.
+      select: {
+        status: true,
+        name: true,
+        cancelAtPeriodEnd: true,
+        subscriptionEndsAt: true,
+        trialEndsAt: true,
+        paymentProvider: true,
+        paymentStatus: true,
+        currentPeriodEnd: true,
+      },
     });
     // Checked on EVERY request, not just at login, so suspending an institute
     // or letting a subscription lapse cuts off sessions that are already

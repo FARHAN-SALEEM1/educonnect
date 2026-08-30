@@ -9,6 +9,33 @@
  */
 import { PrismaClient } from "@prisma/client";
 import bcrypt from "bcryptjs";
+import dotenv from "dotenv";
+
+dotenv.config();
+
+/**
+ * Never seed production.
+ *
+ * Every account below has a password that is written in this file, in the
+ * README and on the login screen. Seeding a live deployment would hand
+ * `sa@educonnect.io` / `super123` — full platform control over every school —
+ * to anyone who has read either.
+ *
+ * `npm run db:seed` also runs scripts/guard-destructive.js, which checks the
+ * connection string as well. This second check is here because the file is a
+ * plain script: `node prisma/seed.js` skips npm and would skip that guard.
+ */
+if (process.env.NODE_ENV === "production") {
+  console.error(
+    "\n  ✖ Refusing to seed: NODE_ENV is production.\n\n" +
+      "    This seed creates demo accounts whose passwords are public\n" +
+      "    (super123, admin123, teach123, parent123). They must never exist\n" +
+      "    on a live deployment.\n\n" +
+      "    A production database is prepared with `npx prisma migrate deploy`,\n" +
+      "    then its first super admin is created by hand.\n"
+  );
+  process.exit(1);
+}
 
 const prisma = new PrismaClient();
 
@@ -58,9 +85,11 @@ const PLANS = [
     price: 4999,
     maxStudents: 200,
     color: T.blue,
+    // Only features that exist. SMS, API access, multi-branch, white-label
+    // and online payments were advertised here and are not built.
     features: [
-      "Up to 200 students", "Basic analytics", "Email support",
-      "Parent & Teacher portal", "Attendance tracking", "Fee management",
+      "Up to 200 students", "Attendance tracking", "Fee management",
+      "Parent & Teacher portals", "Reports & CSV exports", "Email support",
     ],
   },
   {
@@ -71,8 +100,8 @@ const PLANS = [
     color: T.forest,
     popular: true,
     features: [
-      "Up to 800 students", "AI-powered insights", "Priority support",
-      "All portals", "Advanced fee management", "SMS alerts", "Reports & exports",
+      "Up to 800 students", "Everything in Starter", "Performance insights",
+      "Advanced fee management", "Bulk student import", "Priority support",
     ],
   },
   {
@@ -82,8 +111,8 @@ const PLANS = [
     maxStudents: 9999,
     color: T.purple,
     features: [
-      "Unlimited students", "Full AI suite", "Dedicated account manager",
-      "All portals", "Custom branding", "API access", "Multi-branch", "White-label option",
+      "Unlimited students", "Everything in Growth", "Full insight suite",
+      "Institute logo & colours", "Dedicated account manager",
     ],
   },
 ];

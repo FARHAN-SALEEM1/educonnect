@@ -18,9 +18,31 @@ export const createInstituteSchema = z.object({
     .string()
     .refine(isValidTimeZone, { message: "Not a recognised IANA timezone, e.g. Asia/Karachi" })
     .optional(),
+
+  /**
+   * The school's first admin, created with the school.
+   *
+   * Required, not optional. A self-service signup always produces an admin, but
+   * this route produced an institute nobody could sign in to — the button that
+   * calls it says "Create & Send Credentials", and there were no credentials to
+   * send. A school with no way in is not a half-finished record, it is a broken
+   * one, so the schema refuses to make one.
+   *
+   * The password is optional: left out, a temporary one is generated and either
+   * emailed or handed back in the response, exactly as for a teacher or parent.
+   */
+  adminName: z.string().trim().min(2).max(120),
+  adminEmail: emailField,
+  adminPassword: z.string().min(6).max(72).optional(),
 });
 
-export const updateInstituteSchema = createInstituteSchema.partial();
+/**
+ * Editing an institute never touches its admin account — that is what the user
+ * routes are for — so the admin fields are dropped rather than made partial.
+ */
+export const updateInstituteSchema = createInstituteSchema
+  .omit({ adminName: true, adminEmail: true, adminPassword: true })
+  .partial();
 
 export const changePlanSchema = z.object({
   planId: z.enum(["starter", "growth", "elite"]),

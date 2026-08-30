@@ -29,8 +29,20 @@ export const listNotices = asyncHandler(async (req, res) => {
 
   // Teachers and parents only see notices addressed to them
   // (an empty audience means "everyone").
+  //
+  // Authors are always included, whoever they addressed. Without that a
+  // teacher who posts to "Parents only" watches their own notice vanish from
+  // the board the moment they publish it — the success message says one thing
+  // and the page says another, and the obvious reading is that it failed.
+  // Parents cannot post at all, so for them the extra clause matches nothing.
   if (["TEACHER", "PARENT"].includes(req.user.role)) {
-    and.push({ OR: [{ audience: { isEmpty: true } }, { audience: { has: req.user.role } }] });
+    and.push({
+      OR: [
+        { audience: { isEmpty: true } },
+        { audience: { has: req.user.role } },
+        { createdById: req.user.id },
+      ],
+    });
   }
 
   const where = {
@@ -132,6 +144,15 @@ export const updateNotice = asyncHandler(async (req, res) => {
     where: { id: req.params.id, ...(req.instituteId && { instituteId: req.instituteId }) },
   });
   if (!existing) throw ApiError.notFound("Notice not found");
+
+  // A teacher may publish, but may only revise what they published themselves.
+  // The notices board shows them the whole institute's notices, so without
+  // this an edit request could rewrite the principal's announcement. 403 and
+  // not 404 here: they can already see the notice, so hiding it would only
+  // confuse. Admins keep editing anything in their own institute.
+  if (req.user.role === "TEACHER" && existing.createdById !== req.user.id) {
+    throw ApiError.forbidden("You can only edit notices you posted yourself");
+  }
 
   const { instituteId: _ignored, ...data } = req.body;
 

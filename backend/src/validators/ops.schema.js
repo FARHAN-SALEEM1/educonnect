@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { booleanQuery, dateString, periodString } from "./common.js";
+import { booleanQuery, dateString, notFutureDate, periodString } from "./common.js";
 
 // ── Attendance ────────────────────────────────────────────────
 
@@ -43,31 +43,87 @@ export const attendanceQuery = z.object({
 
 // ── Fees ──────────────────────────────────────────────────────
 
+/** The heads a school bills under — mirrors the FeeHead enum. */
+export const FEE_HEADS = ["TUITION","ADMISSION","ANNUAL","EXAMINATION","TRANSPORT","HOSTEL","LIBRARY","SPORTS","LAB","MISCELLANEOUS"];
+
+/** One line on a challan. */
+const feeItem = z.object({
+  head: z.enum(FEE_HEADS),
+  label: z.string().trim().max(60).optional().nullable(),
+  amount: z.coerce.number().int().min(0),
+});
+
+
+/**
+ * A discount cannot be larger than the charge it comes off.
+ *
+ * `{ amount: 3000, discount: 5000 }` was accepted, leaving a challan whose net
+ * payable was minus two thousand. The outstanding total survived it — the
+ * figures clamp at zero — but the invoiced total quietly shrank, and the
+ * printed challan showed a Pakistani parent a negative balance.
+ *
+ * Checked on the object rather than the field, because it is a relationship
+ * between two of them. Only applied when both are present: a PATCH that moves
+ * one alone is checked against the stored row in the controller.
+ */
+const discountWithinAmount = (value, ctx) => {
+  if (value.amount === undefined || value.discount === undefined) return;
+  if (value.discount > value.amount) {
+    ctx.addIssue({
+      code: "custom",
+      path: ["discount"],
+      message: `A discount of Rs. ${value.discount.toLocaleString("en-PK")} is more than the Rs. ${value.amount.toLocaleString("en-PK")} being charged`,
+    });
+  }
+};
 export const createInvoiceSchema = z.object({
   studentId: z.string().min(1),
   period: periodString,
-  amount: z.coerce.number().int().min(0),
+  // Optional when `items` are given: the total is then their sum, so an
+  // amount typed alongside them could only ever disagree.
+  amount: z.coerce.number().int().min(0).optional(),
+  items: z.array(feeItem).max(20).optional(),
   discount: z.coerce.number().int().min(0).optional(),
   lateFee: z.coerce.number().int().min(0).optional(),
   dueDate: dateString.optional(),
   notes: z.string().trim().max(240).optional().nullable(),
   instituteId: z.string().optional(),
-});
+}).superRefine(discountWithinAmount);
 
 /** Generate the month's invoices for every active student at once. */
 export const generateInvoicesSchema = z.object({
   period: periodString,
   amount: z.coerce.number().int().min(0).optional(),
+  // The month's standard breakdown, applied to every invoice in the run.
+  items: z.array(feeItem).max(20).optional(),
   dueDay: z.coerce.number().int().min(1).max(28).optional(),
   grade: z.string().optional(),
   instituteId: z.string().optional(),
 });
 
+/**
+ * Editing an already-issued challan.
+ *
+ * This route had no schema at all: whatever the body held was spread straight
+ * into a Prisma update, which meant an admin could reach fields — and nested
+ * relation writes such as `student: { connect: ... }` — that no screen offers
+ * and that scoping does not re-check.
+ */
+export const updateInvoiceSchema = z.object({
+  amount: z.coerce.number().int().min(0).optional(),
+  items: z.array(feeItem).max(20).optional(),
+  discount: z.coerce.number().int().min(0).optional(),
+  lateFee: z.coerce.number().int().min(0).optional(),
+  dueDate: dateString.optional(),
+  status: z.enum(["PENDING", "PAID", "OVERDUE", "WAIVED"]).optional(),
+  notes: z.string().trim().max(240).optional().nullable(),
+}).superRefine(discountWithinAmount);
+
 export const payInvoiceSchema = z.object({
   paidAmount: z.coerce.number().int().min(0).optional(),
   method: z.enum(["Cash", "Bank Transfer", "Cheque", "JazzCash", "EasyPaisa", "Card"]).optional(),
   reference: z.string().trim().max(60).optional().nullable(),
-  paidAt: dateString.optional(),
+  paidAt: notFutureDate("Payment date").optional(),
 });
 
 export const feeQuery = z.object({

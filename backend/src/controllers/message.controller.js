@@ -178,9 +178,40 @@ export const sendMessage = asyncHandler(async (req, res) => {
     throw ApiError.forbidden("You can only message people within your own institute");
   }
 
+  /**
+   * The child and guardian a message is about have to be this school's.
+   *
+   * These two ids came straight off the request body and went straight into
+   * the row. `MESSAGE_INCLUDE` then hydrates the student back out, so anyone
+   * holding a student id from another school — a parent, the lowest-privilege
+   * role there is — could post a message to their own teacher and read that
+   * child's name, grade and section out of the response. The row also kept a
+   * foreign key pointing across the tenant boundary for good.
+   *
+   * Refused rather than quietly nulled: a caller attaching the wrong child
+   * should be told, not have the attachment silently dropped.
+   */
+  const scope = req.user.instituteId ?? recipient.instituteId;
+
+  if (studentId) {
+    const student = await prisma.student.findFirst({
+      where: { id: studentId, instituteId: scope },
+      select: { id: true },
+    });
+    if (!student) throw ApiError.badRequest("That student is not in this institute");
+  }
+
+  if (parentId) {
+    const parent = await prisma.parent.findFirst({
+      where: { id: parentId, instituteId: scope },
+      select: { id: true },
+    });
+    if (!parent) throw ApiError.badRequest("That guardian is not in this institute");
+  }
+
   const message = await prisma.message.create({
     data: {
-      instituteId: req.user.instituteId ?? recipient.instituteId,
+      instituteId: scope,
       senderId: req.user.id,
       recipientId,
       subject,

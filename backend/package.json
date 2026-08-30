@@ -12,14 +12,23 @@
     "dev": "nodemon src/server.js",
     "start": "node src/server.js",
     "db:generate": "prisma generate",
-    "db:migrate": "prisma migrate dev --name init",
-    "db:push": "prisma db push",
-    "db:seed": "node prisma/seed.js",
+    "db:migrate": "node scripts/guard-destructive.js \"db:migrate\" && prisma migrate dev --name init",
+    "db:push": "node scripts/guard-destructive.js \"db:push\" && prisma db push",
+    "db:seed": "node scripts/guard-destructive.js \"db:seed\" && node prisma/seed.js",
     "db:studio": "prisma studio",
-    "db:reset": "prisma migrate reset --force",
+    "db:reset": "node scripts/guard-destructive.js \"db:reset\" && prisma migrate reset --force",
+    "db:deploy": "prisma migrate deploy",
+    "db:backup": "node scripts/db-backup.js",
+    "db:verify": "node scripts/db-verify.js",
+    "db:restore-check": "node scripts/db-restore-check.js",
+    "smtp:verify": "node scripts/verify-smtp.js",
+    "sessions:backfill": "node scripts/backfill-enrollment-sessions.js",
+    "scores:inspect": "node scripts/inspect-scores.js",
+    "scores:reconcile": "node scripts/reconcile-scores.js",
+    "scores:decide": "node scripts/apply-score-decision.js",
     "test": "vitest run",
     "test:watch": "vitest",
-    "setup": "prisma generate && prisma migrate dev --name init && node prisma/seed.js"
+    "setup": "node scripts/guard-destructive.js \"setup\" && prisma generate && prisma migrate dev --name init && node prisma/seed.js"
   },
   "prisma": {
     "seed": "node prisma/seed.js"

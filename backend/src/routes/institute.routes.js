@@ -36,6 +36,73 @@ router.patch(
   ctrl.updateNotificationSettings
 );
 
+// The academic session. Reading it is open to anyone signed into the school —
+// a result card header needs it. Changing it is the admin's.
+router.get("/me/session", requireInstitute, ctrl.getSession);
+router.patch(
+  "/me/session",
+  authorize("ADMIN", "SUPERADMIN"),
+  requireInstitute,
+  ctrl.updateSession
+);
+
+// A school's own year: April-to-March by default, but a Karachi or
+// Cambridge-track school running August-to-July sets its own here.
+// A school names its own terms, and names them within one year.
+router.get(
+  "/me/sessions/:id/terms",
+  authorize("ADMIN", "SUPERADMIN", "TEACHER"),
+  requireInstitute,
+  ctrl.listSessionTerms
+);
+router.post(
+  "/me/sessions/:id/terms",
+  authorize("ADMIN", "SUPERADMIN"),
+  requireInstitute,
+  ctrl.createSessionTerm
+);
+// Before "/:termId", so the literal "order" is not read as a term id.
+router.patch(
+  "/me/sessions/:id/terms/order",
+  authorize("ADMIN", "SUPERADMIN"),
+  requireInstitute,
+  ctrl.reorderSessionTerms
+);
+router.patch(
+  "/me/sessions/:id/terms/:termId",
+  authorize("ADMIN", "SUPERADMIN"),
+  requireInstitute,
+  ctrl.updateSessionTerm
+);
+router.delete(
+  "/me/sessions/:id/terms/:termId",
+  authorize("ADMIN", "SUPERADMIN"),
+  requireInstitute,
+  ctrl.deleteSessionTerm
+);
+
+router.get(
+  "/me/grading",
+  authorize("ADMIN", "SUPERADMIN", "TEACHER"),
+  requireInstitute,
+  ctrl.getGradingSettings
+);
+
+// A+ at 90 or at 80, a pass at 33 or at 40 — every school decides its own.
+router.patch(
+  "/me/grading",
+  authorize("ADMIN", "SUPERADMIN"),
+  requireInstitute,
+  ctrl.updateGradingSettings
+);
+
+router.patch(
+  "/me/sessions/:id",
+  authorize("ADMIN", "SUPERADMIN"),
+  requireInstitute,
+  ctrl.updateSessionDates
+);
+
 router.post(
   "/me/subscription/plan",
   authorize("ADMIN", "SUPERADMIN"),

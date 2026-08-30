@@ -172,7 +172,6 @@ The response carries `accessToken`; send it as `Authorization: Bearer <token>` o
 | `CORS_ORIGIN` | no | `http://localhost:5173` | Comma-separated list |
 | `RATE_LIMIT_MAX` | no | `500` | Requests per window per IP |
 | `AUTH_RATE_LIMIT_MAX` | no | `20` | Tighter budget for login/signup |
-| `DEFAULT_USER_PASSWORD` | no | `educonnect123` | Legacy fallback; new accounts get a random password instead |
 | `SMTP_HOST` | no | — | Blank means emails print to the console instead of sending |
 | `SMTP_PORT` | no | `587` | |
 | `SMTP_USER` / `SMTP_PASS` | no | — | Omit for an unauthenticated relay |
@@ -182,7 +181,7 @@ The response carries `accessToken`; send it as `Authorization: Bearer <token>` o
 
 The server refuses to start if a required variable is missing, and tells you which.
 
-**In production it also refuses to start** if a JWT secret is still a `change_me…` placeholder, is shorter than 32 characters, if both secrets are identical, or if `DEFAULT_USER_PASSWORD` is still the documented default. Those are precisely the settings that survive a rushed deploy unnoticed.
+**In production it also refuses to start** if a JWT secret is still a `change_me…` placeholder, is shorter than 32 characters, or if both secrets are identical. Those are precisely the settings that survive a rushed deploy unnoticed.
 
 ---
 
@@ -278,7 +277,7 @@ Deleting an institute cascades through every record it owns.
 
 | Layer | Mechanism |
 |---|---|
-| Token storage | The refresh token lives in an **httpOnly, SameSite cookie scoped to `/api/auth`** — unreadable by JavaScript, so an XSS bug can't lift a long-lived session. The access token is returned in the body and held in memory by the client, never in `localStorage`. API clients can opt into a body token with `?tokenInBody=1`. |
+| Token storage | The refresh token lives in an **httpOnly, SameSite cookie scoped to `/api/auth`** — unreadable by JavaScript, so an XSS bug can't lift a long-lived session. The cookie is the only channel: the token is never returned in a response body and never read from a request body. The access token is returned in the body and held in memory by the client, never in `localStorage`. |
 | Passwords | bcrypt, cost 10. Minimum 8 characters, enforced on **both** the self-service and admin-reset paths. |
 | Password delivery | New and reset passwords are emailed, never returned in a response body — so they stay out of browser memory and proxy logs. Without SMTP the API returns them once and says so, because otherwise a school with no mail server can't recover an account. |
 | Reset links | Single-use, hashed at rest, 30-minute expiry, and requesting a new one invalidates the old. |

@@ -40,6 +40,22 @@ beforeAll(async () => {
 
 const skip = () => !seeded;
 
+/**
+ * The setup ran.
+ *
+ * Every test below opens with `if (skip()) return`, which lets this file stand
+ * down on an unseeded machine — and which also turns a broken `beforeAll` into
+ * a column of green ticks. This is the one check that does not skip when the
+ * seed is actually there. See tests/helpers/fixtures.js for what it cost.
+ */
+it("built its fixtures", async () => {
+  const { seedPresent } = await import("./helpers/fixtures.js");
+  if (!(await seedPresent())) return;
+  expect(seeded, "beforeAll did not complete — every test in this file is vacuous").toBe(
+    true
+  );
+});
+
 describe("IDOR — another institute's IDs must not work", () => {
   it("refuses cross-tenant reads, updates and deletes", async () => {
     if (skip()) return;
@@ -139,5 +155,63 @@ describe("hostile input", () => {
   it("returns 404 for an id that cannot exist", async () => {
     if (skip()) return;
     expect((await as(bhsAdmin).get("/api/students/not-a-real-id")).status).toBe(404);
+  });
+});
+
+/**
+ * Nothing that identifies us to the payment gateway may reach a browser, and
+ * least of all an anonymous one.
+ *
+ * `GET /api/plans` needs no token — it draws the pricing table on the landing
+ * page — and it was returning every Plan column, `providerPriceIds` included.
+ * PLAN_PUBLIC existed and was used at every site where a plan is nested inside
+ * something else; the one endpoint that returns plans on their own was the one
+ * that missed it, which is the easiest kind of gap to leave behind.
+ */
+describe("public responses carry nothing from the server's side of the gateway", () => {
+  const FORBIDDEN = [
+    "providerPriceIds",
+    "providerCustomerId",
+    "providerSubscriptionId",
+    "passwordHash",
+    "webhookSecret",
+    "SAFEPAY",
+    "SMTP_PASS",
+    "JWT_",
+  ];
+
+  it("serves the pricing table without a token, and without price ids", async () => {
+    const res = await request(app).get("/api/plans");
+    expect(res.status).toBe(200);
+    expect(res.body.data.length).toBeGreaterThan(0);
+
+    for (const plan of res.body.data) {
+      expect(plan).not.toHaveProperty("providerPriceIds");
+      // and it is still the plan the pricing table needs
+      expect(plan).toHaveProperty("name");
+      expect(plan).toHaveProperty("price");
+      expect(plan).toHaveProperty("maxStudents");
+    }
+
+    const body = JSON.stringify(res.body);
+    for (const key of FORBIDDEN) expect(body).not.toContain(key);
+  });
+
+  it("keeps the same promise on the endpoints an admin sees", async () => {
+    if (skip()) return;
+    const urls = [
+      "/api/institutes/me",
+      "/api/institutes/me/subscription",
+      "/api/billing/status",
+      "/api/auth/me",
+    ];
+    for (const url of urls) {
+      const res = await as(bhsAdmin).get(url);
+      if (res.status !== 200) continue;
+      const body = JSON.stringify(res.body);
+      for (const key of FORBIDDEN) {
+        expect(body, `${url} leaked ${key}`).not.toContain(key);
+      }
+    }
   });
 });

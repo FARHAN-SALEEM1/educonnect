@@ -159,6 +159,22 @@ export const toLegacyFees = (input = []) => {
     date: f.paidAt ? shortDate(f.paidAt) : null,
     dueDate: shortDate(f.dueDate),
     method: f.method ?? null,
+    // Kept alongside `amt` so a breakdown can say why the payable differs from
+    // the heads it lists, instead of quietly showing two totals.
+    discount: f.discount ?? 0,
+    lateFee: f.lateFee ?? 0,
+    // Part payment is normal here, so a guardian needs to see what has been
+    // received against this challan and what is still due — not just its total.
+    paid: f.paidAmount ?? 0,
+    balance: f.balance ?? Math.max(0, (f.amount - (f.discount ?? 0) + (f.lateFee ?? 0)) - (f.paidAmount ?? 0)),
+    // What the challan is made of. Empty for anything raised before fee heads
+    // existed, and for a school that bills a single flat amount — both of which
+    // stay perfectly valid, so the UI shows a breakdown only when there is one.
+    items: (f.items ?? []).map((i) => ({
+      head: i.head,
+      label: i.label ?? null,
+      amount: i.amount,
+    })),
   }));
 };
 
@@ -170,6 +186,17 @@ export const toLegacySubjects = (subjects = []) =>
     // The enrolment row, which is what score edits are written against.
     enrollmentId: s.enrollmentId ?? null,
     name: s.name,
+    /**
+     * Whether a score exists at all, kept apart from the number.
+     *
+     * `score` stays numeric because bars and arithmetic all over the portals
+     * depend on it. But a subject nobody has marked has no score, and the
+     * zero standing in for it reads as though the child scored nothing —
+     * which is a different and much worse claim. Since subject scores became
+     * derived from marks, a fresh enrolment starts unmarked, so this is the
+     * ordinary case rather than a rare one.
+     */
+    scored: s.score !== null && s.score !== undefined,
     score: s.score ?? 0,
     prev: s.previousScore ?? s.score ?? 0,
     grade: s.grade ?? "—",
@@ -311,7 +338,14 @@ export const toLegacyStudentSummary = (s) => ({
   blood: s.bloodGroup,
 
   gpa: s.gpa ?? 0,
-  rank: s.rank ?? 0,
+  /**
+   * `null` means no position, and it has to survive the mapping.
+   *
+   * Coercing it to 0 turned an honest blank into a rank of zero, which the
+   * screens then printed as "Rank #0". The API says null when a child has
+   * nothing marked; every render site now checks for it.
+   */
+  rank: s.rank ?? null,
   classSize: s.classSize ?? 0,
   // `score` is the headline bar the portals plot — the strongest subject.
   score: Math.round(s.topScore ?? s.average ?? 0),
@@ -347,7 +381,14 @@ export const toLegacyStudentFull = (s) => ({
   aiScore: aiScoreFrom(s.aiInsights),
   aiScoreLabel: aiScoreLabel(aiScoreFrom(s.aiInsights)),
   gpa: s.gpa ?? 0,
-  rank: s.rank ?? 0,
+  /**
+   * `null` means no position, and it has to survive the mapping.
+   *
+   * Coercing it to 0 turned an honest blank into a rank of zero, which the
+   * screens then printed as "Rank #0". The API says null when a child has
+   * nothing marked; every render site now checks for it.
+   */
+  rank: s.rank ?? null,
   classSize: s.classSize ?? 0,
 });
 
@@ -374,8 +415,22 @@ export const toLegacyParent = (p) => ({
   phone: p.phone,
   rel: p.relation ?? "Guardian",
   instId: p.institute?.id ?? p.instituteId ?? null,
+  /**
+   * The first child, kept only for callers that have not been taught about
+   * siblings yet. A guardian with three children in the school is the
+   * commonest family a Pakistani school has, and reading `studentId` shows
+   * one of them and hides the rest.
+   */
   studentId: p.students?.[0]?.id ?? null,
   studentIds: (p.students ?? []).map((s) => s.id),
+  /** Every child, with enough to name them on a screen. */
+  children: (p.students ?? []).map((s) => ({
+    id: s.id,
+    name: s.name,
+    grade: s.grade ?? null,
+    section: s.section ?? null,
+    roll: s.rollNo ?? null,
+  })),
   userId: p.user?.id ?? p.userId ?? null,
 });
 
@@ -409,4 +464,7 @@ export const toLegacyNotice = (n) => ({
   instId: n.instituteId,
   pinned: n.isPinned,
   author: n.createdBy?.name ?? null,
+  // Who posted it, so a teacher's board can offer Edit on their own notices
+  // only. The backend refuses the rest either way.
+  authorId: n.createdBy?.id ?? null,
 });

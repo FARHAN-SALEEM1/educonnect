@@ -10,7 +10,8 @@ import { prisma } from "./config/prisma.js";
 import routes from "./routes/index.js";
 import { errorHandler, notFoundHandler } from "./middleware/errorHandler.js";
 import { ApiError } from "./utils/ApiError.js";
-import { generalLimiter } from "./middleware/rateLimit.js";
+import { generalLimiter, webhookLimiter } from "./middleware/rateLimit.js";
+import { handleWebhook as billingWebhook } from "./controllers/billing.controller.js";
 
 const app = express();
 
@@ -36,6 +37,34 @@ app.use(
 );
 
 app.use(compression());
+
+/**
+ * The payment webhook, mounted deliberately early.
+ *
+ * Signature verification is computed over the exact bytes the gateway signed.
+ * Once `express.json()` has parsed and re-serialised the body, key order and
+ * whitespace differ and every signature fails — with an error that points at
+ * cryptography rather than at middleware ordering, which is a genuinely
+ * horrible afternoon. So this route takes the raw buffer and is registered
+ * above the JSON parser.
+ *
+ * It also sits above `generalLimiter`: gateways retry failed deliveries
+ * aggressively, and rate-limiting those retries would turn a transient blip
+ * into permanently lost payment confirmations.
+ *
+ * `webhookLimiter` is the exception, and only because it counts failures.
+ * Genuine deliveries verify, answer 2xx and are never counted, so the
+ * gateway's own address keeps a whole budget however hard it retries. Forged
+ * requests — otherwise unlimited, and each costing a full-body HMAC — are
+ * capped against the address they come from.
+ */
+app.post(
+  "/api/billing/webhook/:provider",
+  webhookLimiter,
+  express.raw({ type: "*/*", limit: "1mb" }),
+  (req, res, next) => billingWebhook(req, res, next)
+);
+
 app.use(express.json({ limit: "1mb" }));
 app.use(express.urlencoded({ extended: true }));
 app.use(cookieParser());

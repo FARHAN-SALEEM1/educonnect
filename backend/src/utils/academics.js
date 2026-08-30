@@ -4,37 +4,29 @@
  * Keeping it in one place means the teacher portal, parent portal and
  * report exports can never disagree about a student's grade.
  */
+import { gradingFor } from "./grading.js";
 
-const GRADE_BANDS = [
-  { min: 90, letter: "A+", point: 4.0 },
-  { min: 85, letter: "A", point: 4.0 },
-  { min: 80, letter: "A−", point: 3.7 },
-  { min: 75, letter: "B+", point: 3.3 },
-  { min: 70, letter: "B", point: 3.0 },
-  { min: 65, letter: "B−", point: 2.7 },
-  { min: 60, letter: "C+", point: 2.3 },
-  { min: 55, letter: "C", point: 2.0 },
-  { min: 50, letter: "D", point: 1.0 },
-  { min: 0, letter: "F", point: 0.0 },
-];
+/**
+ * The platform's own scale, for callers with no school in hand.
+ *
+ * There used to be a second band table here, and it was the one nearly the
+ * whole product actually used — the student list, both dashboards, the
+ * gradebook and the stored letter on an enrolment all read it, while only the
+ * result card read the school's own. A school that set A+ at 80 therefore saw
+ * A+ on the card and A− everywhere else in the app.
+ *
+ * There is one band table now, in utils/grading.js, and these three are the
+ * unconfigured fallback rather than a rival opinion. Anything that knows which
+ * school it is answering about should use gradingFor(institute) or
+ * policyFor(instituteId) instead of these.
+ */
+const platform = gradingFor(null);
 
-export const letterGrade = (score) => {
-  if (score === null || score === undefined) return null;
-  return GRADE_BANDS.find((b) => score >= b.min).letter;
-};
+export const letterGrade = (score) => platform.letterGrade(score);
+export const gradePoint = (score) => platform.gradePoint(score);
 
-export const gradePoint = (score) => {
-  if (score === null || score === undefined) return 0;
-  return GRADE_BANDS.find((b) => score >= b.min).point;
-};
-
-/** Unweighted GPA on a 4.0 scale across a student's enrollments. */
-export const calculateGpa = (enrollments = []) => {
-  const scored = enrollments.filter((e) => e.currentScore !== null && e.currentScore !== undefined);
-  if (!scored.length) return 0;
-  const total = scored.reduce((sum, e) => sum + gradePoint(e.currentScore), 0);
-  return Number((total / scored.length).toFixed(2));
-};
+/** Unweighted GPA on the platform default scale. */
+export const calculateGpa = (enrollments = []) => platform.gpa(enrollments);
 
 export const averageScore = (enrollments = []) => {
   const scored = enrollments.filter((e) => e.currentScore !== null && e.currentScore !== undefined);
@@ -54,12 +46,24 @@ export const predictScore = (current, previous) => {
 };
 
 /** Percentage of a subject's assessments, used to derive the current score. */
-export const assessmentAverage = (assessments = []) => {
-  if (!assessments.length) return null;
-  const totals = assessments.reduce(
+/**
+ * The marks themselves: what was obtained, out of what.
+ *
+ * A Pakistani result card is written in marks — "82 / 100" per subject and
+ * "850 / 1100" at the foot — with the percentage as a summary of them, not a
+ * replacement for them. This was computed inside `assessmentAverage` and thrown
+ * away, so the card could only ever show the percentage and a parent had no way
+ * to check the arithmetic.
+ */
+export const marksTotal = (assessments = []) =>
+  assessments.reduce(
     (acc, a) => ({ obtained: acc.obtained + a.obtained, total: acc.total + a.total }),
     { obtained: 0, total: 0 }
   );
+
+export const assessmentAverage = (assessments = []) => {
+  if (!assessments.length) return null;
+  const totals = marksTotal(assessments);
   if (!totals.total) return null;
   return Number(((totals.obtained / totals.total) * 100).toFixed(1));
 };

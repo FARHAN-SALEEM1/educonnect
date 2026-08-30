@@ -5,8 +5,9 @@ import { asyncHandler } from "../utils/asyncHandler.js";
 import { created, ok, paginate, pageMeta } from "../utils/response.js";
 import crypto from "node:crypto";
 import { hashPassword } from "../utils/password.js";
+import { hashToken } from "../utils/jwt.js";
 import { audit } from "../utils/audit.js";
-import { emailEnabled, sendWelcome } from "../services/email.service.js";
+import { sendPasswordReset, sendWelcome, notSent, undeliveredReason } from "../services/email.service.js";
 
 const SAFE_SELECT = {
   id: true,
@@ -100,25 +101,27 @@ export const createUser = asyncHandler(async (req, res) => {
 
   audit(req, { action: "user.create", entity: "User", entityId: user.id, meta: { role } });
 
-  if (!password) {
-    await sendWelcome({
-      to: user.email,
-      name: user.name,
-      role: role.toLowerCase(),
-      instituteName: user.institute?.name ?? "EduConnect",
-      tempPassword,
-      loginUrl: `${env.appUrl}/`,
-    });
-  }
+  // Kept, not discarded: if the welcome mail did not land, the generated
+  // password has to appear on screen or the account is unreachable.
+  const delivery = password
+    ? notSent("not-applicable")
+    : await sendWelcome({
+        to: user.email,
+        name: user.name,
+        role: role.toLowerCase(),
+        instituteName: user.institute?.name ?? "EduConnect",
+        tempPassword,
+        loginUrl: `${env.appUrl}/`,
+      });
 
   return created(
     res,
-    { ...user, emailed: !password && emailEnabled() },
+    { ...user, emailed: delivery.delivered },
     password
       ? `${user.name} created.`
-      : emailEnabled()
+      : delivery.delivered
         ? `${user.name} created — sign-in details sent to ${user.email}.`
-        : `${user.name} created. Temporary password: ${tempPassword} (no mail server configured).`
+        : `${user.name} created. Temporary password: ${tempPassword} (${undeliveredReason(delivery.reason)}).`
   );
 });
 
@@ -151,11 +154,22 @@ export const updateUser = asyncHandler(async (req, res) => {
 /**
  * POST /api/users/:id/reset-password — admin-forced reset.
  *
- * When email is configured the new password is sent to the user and never
- * returned by the API, so it stays out of response bodies, browser memory and
- * proxy logs. Without SMTP the API returns it once, because otherwise an admin
- * in a school with no mail server has no way to get the user back in — but it
- * says plainly that this is the fallback.
+ * Sends the user a single-use reset link rather than minting a password.
+ *
+ * The old behaviour generated a password and, with no mail server, returned it
+ * in the response body — where it passed through the admin's browser, any
+ * proxy in between, and onto the screen. It also meant a working credential
+ * existed that neither party had chosen. A reset link is strictly better: it
+ * expires, it can only be used once, and the password is chosen by its owner
+ * and never transits at all.
+ *
+ * The account is locked out immediately either way — every session is revoked
+ * here, so a compromised account stops being usable the moment an admin acts,
+ * without waiting for the user to follow the link.
+ *
+ * Nothing secret is ever returned. Without SMTP the link is written to the
+ * server console by the mail service, which is a development affordance;
+ * production refuses to start without SMTP configured.
  */
 export const resetPassword = asyncHandler(async (req, res) => {
   const existing = await prisma.user.findFirst({
@@ -164,42 +178,50 @@ export const resetPassword = asyncHandler(async (req, res) => {
   });
   if (!existing) throw ApiError.notFound("User not found");
 
-  // A random password beats a shared default that everyone in the school knows.
-  const newPassword = req.body?.password || `EC-${crypto.randomBytes(4).toString("hex")}`;
+  const token = crypto.randomBytes(32).toString("hex");
+  const minutes = env.passwordResetExpiryMinutes;
 
   await prisma.$transaction([
-    prisma.user.update({
-      where: { id: existing.id },
-      data: { passwordHash: await hashPassword(newPassword) },
+    // Supersede any link already outstanding, so only the newest one works.
+    prisma.passwordResetToken.updateMany({
+      where: { userId: existing.id, usedAt: null },
+      data: { usedAt: new Date() },
     }),
+    prisma.passwordResetToken.create({
+      data: {
+        tokenHash: hashToken(token),
+        userId: existing.id,
+        expiresAt: new Date(Date.now() + minutes * 60 * 1000),
+        ip: req.ip,
+      },
+    }),
+    // Lock the account out now rather than when the link is followed.
     prisma.refreshToken.updateMany({
       where: { userId: existing.id, revokedAt: null },
       data: { revokedAt: new Date() },
     }),
   ]);
 
-  audit(req, { action: "user.reset_password", entity: "User", entityId: existing.id });
+  const delivery = await sendPasswordReset({
+    to: existing.email,
+    name: existing.name,
+    resetUrl: `${env.appUrl}/reset-password?token=${token}`,
+    expiresMinutes: minutes,
+  });
 
-  if (emailEnabled()) {
-    await sendWelcome({
-      to: existing.email,
-      name: existing.name,
-      role: existing.role.toLowerCase(),
-      instituteName: existing.institute?.name ?? "EduConnect",
-      tempPassword: newPassword,
-      loginUrl: `${env.appUrl}/`,
-    });
-    return ok(
-      res,
-      { email: existing.email, emailed: true },
-      `New password sent to ${existing.email}. They have been signed out everywhere.`
-    );
-  }
+  audit(req, {
+    action: "user.reset_password",
+    entity: "User",
+    entityId: existing.id,
+    meta: { delivered: delivery.delivered },
+  });
 
   return ok(
     res,
-    { email: existing.email, password: newPassword, emailed: false },
-    `Password reset for ${existing.name}: ${newPassword} — no mail server is configured, so share this securely and ask them to change it.`
+    { email: existing.email, emailed: delivery.delivered, expiresMinutes: minutes },
+    delivery.delivered
+      ? `Reset link sent to ${existing.email}. They have been signed out everywhere and the link expires in ${minutes} minutes.`
+      : `${existing.name} has been signed out everywhere. No mail server is configured, so the reset link was written to the server log.`
   );
 });
 
