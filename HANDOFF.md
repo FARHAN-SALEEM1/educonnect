@@ -187,7 +187,9 @@ educonnect direct app/
 
 - **Tests:** **872/872 pass, 55 test files** (2026-08-30)
 - **Build:** clean, `519.02 kB` (gzip 135.39 kB)
-- **Git:** kuch commit/push/deploy nahi hua. Bohat saari uncommitted changes hain (branch `main`)
+- **Git:** **2026-08-30 ko pehli dafa commit aur push hua** — branch `deploy-prep`,
+  159 files, +35,092 / −1,066. Us se pehle repo mein sirf ek commit tha aur poori
+  application uncommitted padi thi. Deploy ab bhi kahin nahi hua.
 - **Demo readiness:** **Non-Safepay functionality demo ke liye tayyar hai.** Chaaron portals kaam karte hain, data saaf hai, timetable conflict-free hai
 - **`PAYMENT_PROVIDER`** — `.env` mein ye **do dafa** likha hai: line 17 par `manual`,
   line 24 par `safepay`. dotenv mein baad wali jeetti hai, is liye **abhi `safepay` chal
@@ -4476,7 +4478,7 @@ cloudflared tunnel --url http://localhost:5001
 
 ```
 tests   872/872, 55 files          build   clean, 519 kB (gzip 135)
-git     kuch commit/push nahi hua  DB      3 demo schools (INS001-003)
+git     branch deploy-prep pushed  DB      3 demo schools (INS001-003)
 score   6 agrees · 7 disagrees · 11 no-marks    + user ke 2 (INS004, INS005)
         ↑ ye data chhuna MANA hai — section 5h
 ```
@@ -4594,7 +4596,10 @@ aur GRADUATED student ki attendance (blocker #12). Teeno par wajah section 6n ke
 - **11 no-mark enrolments aur 7 score disagreements** — user ka sarahat faisla hai, chhoona
   mana hai (section 5h)
 - **Demo credentials** badalna
-- **Commit, push ya deploy** — user ne har session mein mana kiya hai
+- **Deploy** — abhi kahin nahi hua, aur user ki sarahat ijazat ke baghair na ho
+- **Commit aur push** — 2026-08-30 tak har session mein mana tha; us din user ne
+  `deploy-prep` branch ke liye sarahatan ijazat di. Wo ijazat **usi kaam ke liye**
+  thi, aage ke commits ke liye dobara poochein
 - **`customer_email` se institute bind karna** — do school ek email de sakte hain
 - **Safepay ke dual signature check ko "simplify" karna** — 1.0.0 `data` sign karta hai,
   2.0.0 raw body; dono asli traffic se dekhe ja chuke hain (section 9)
