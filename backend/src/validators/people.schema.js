@@ -24,6 +24,7 @@ export const updateStudentSchema = createStudentSchema.partial();
 
 export const createTeacherSchema = z.object({
   name: z.string().trim().min(2, "Teacher name is required").max(120),
+  branchId: z.string().optional().nullable(),
   email: emailField,
   phone: phone.optional().nullable(),
   designation: z.string().trim().max(80).optional().nullable(),

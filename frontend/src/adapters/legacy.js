@@ -430,6 +430,7 @@ export const toLegacyTeacher = (t) => ({
   subject: t.subject ?? t.subjects?.[0]?.name ?? "—",
   subjects: t.subjects ?? [],
   instId: t.institute?.id ?? t.instituteId ?? null,
+  branch: t.branch ? { id: t.branch.id, name: t.branch.name, code: t.branch.code } : null,
   classes: t.classes ?? [],
   students: t.students ?? 0,
   status: t.isActive === false ? "inactive" : "active",

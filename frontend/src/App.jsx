@@ -5022,6 +5022,7 @@ const AdminPortal=({user,db,setDb,onLogout,onReload})=>{
   const[stuGrade,setStuGrade]=useState("");
   const[stuStatus,setStuStatus]=useState("");
   const[stuBranch,setStuBranch]=useState("");
+  const[tchBranch,setTchBranch]=useState("");
   const[parQ,setParQ]=useState("");
 
   const gradeOptions=useMemo(()=>{
@@ -5057,6 +5058,10 @@ const AdminPortal=({user,db,setDb,onLogout,onReload})=>{
       (!q||has(s.name)||has(s.roll)||has(s.code))
     );
   },[students,stuQ,stuGrade,stuStatus,stuBranch]);
+
+  const shownTeachers=useMemo(()=>(
+    tchBranch ? teachers.filter(t=>t.branch?.id===tchBranch) : teachers
+  ),[teachers,tchBranch]);
 
   const shownParents=useMemo(()=>{
     const q=parQ.trim().toLowerCase();
@@ -6026,6 +6031,7 @@ const AdminPortal=({user,db,setDb,onLogout,onReload})=>{
       roll:record.roll??"",
       rel:record.rel??"",
       parentId:record.parentId??"",
+      branchId:record.branch?.id??"",
     });
     const s=(k,v)=>setF(x=>({...x,[k]:v}));
     const[saving,setSaving]=useState(false);
@@ -6051,9 +6057,12 @@ const AdminPortal=({user,db,setDb,onLogout,onReload})=>{
         const payload=type==="Student"
           ? {name:f.name,grade:f.grade,section:f.section,rollNo:f.roll,phone:f.phone||null,
              // null unlinks; the child stays enrolled either way.
-             parentId:f.parentId||null}
+             parentId:f.parentId||null,
+             // Same for the campus: blank means this school does not sort by
+             // building, or this child has not been placed in one yet.
+             branchId:f.branchId||null}
           : type==="Teacher"
-            ? {name:f.name,email:f.email,phone:f.phone||null,subjectIds}
+            ? {name:f.name,email:f.email,phone:f.phone||null,subjectIds,branchId:f.branchId||null}
             : {name:f.name,email:f.email,phone:f.phone||null,...(f.rel&&{relation:f.rel}),
                studentIds:childIds};
         await API_FOR[type].update(record.id,payload);
@@ -6080,7 +6089,17 @@ const AdminPortal=({user,db,setDb,onLogout,onReload})=>{
               <Sel label="Parent / Guardian" value={f.parentId} onChange={e=>s("parentId",e.target.value)}
                 options={[{v:"",l:"— none —"},...parents.map(p=>({v:p.id,l:guardianLabel(p)}))]}/>
             </div>
+            {branches.length>0&&(
+              <div style={{gridColumn:"1/-1"}}>
+                <Sel label="Campus" value={f.branchId} onChange={e=>s("branchId",e.target.value)}
+                  options={[{v:"",l:"— not placed —"},...branches.map(b=>({v:b.id,l:b.name}))]}/>
+              </div>
+            )}
           </>}
+          {type==="Teacher"&&branches.length>0&&<div style={{gridColumn:"1/-1"}}>
+            <Sel label="Campus" value={f.branchId} onChange={e=>s("branchId",e.target.value)}
+              options={[{v:"",l:"— not placed —"},...branches.map(b=>({v:b.id,l:b.name}))]}/>
+          </div>}
           {type==="Teacher"&&<div style={{gridColumn:"1/-1"}}>
             <PickList label="Subjects Taught" value={subjectIds} onChange={setSubjectIds}
               options={schoolSubjects.map(x=>({v:x.id,l:subjectLabel(x)}))}
@@ -6903,8 +6922,20 @@ const AdminPortal=({user,db,setDb,onLogout,onReload})=>{
               <Btn onClick={()=>setModal("Teacher")}>+ Add Teacher</Btn>
             </div>
           }/>
+          {branches.length>0&&(
+            <div style={{display:"flex",gap:12,alignItems:"flex-end",flexWrap:"wrap",marginBottom:16}}>
+              <Sel label="Campus" options={branchOptions} value={tchBranch} onChange={e=>setTchBranch(e.target.value)} style={{marginBottom:0,width:180}}/>
+              {tchBranch&&(
+                <Btn out color={T.muted} onClick={()=>setTchBranch("")} style={{marginBottom:2}}>Clear</Btn>
+              )}
+              <div style={{fontSize:12,color:T.muted,paddingBottom:12,marginLeft:"auto"}}>
+                {count(shownTeachers.length,"teacher")}{shownTeachers.length!==teachers.length&&` of ${teachers.length}`}
+              </div>
+            </div>
+          )}
+
           <div style={{display:"grid",gridTemplateColumns:"repeat(2,1fr)",gap:16}}>
-            {teachers.map(t=>(
+            {shownTeachers.map(t=>(
               <Crd key={t.id} style={{padding:"24px"}}>
                 <div style={{display:"flex",gap:14,alignItems:"center",marginBottom:16}}>
                   <Av name={t.name} size={50} bg={G(T.purple,T.blue)} fs={16}/>

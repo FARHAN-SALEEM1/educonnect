@@ -52,11 +52,13 @@ const teacherWorkload = async (teacherId) => {
 /** GET /api/teachers */
 export const listTeachers = asyncHandler(async (req, res) => {
   const { page, limit, skip } = paginate(req.query);
-  const { search, isActive } = req.query;
+  const { search, isActive, branchId } = req.query;
 
   const where = {
     ...(req.instituteId && { instituteId: req.instituteId }),
     ...(isActive !== undefined && { isActive: isActive === "true" }),
+    // A campus filter, when the school has campuses at all.
+    ...(branchId && { branchId }),
     ...(search && {
       OR: [
         { name: { contains: search, mode: "insensitive" } },
@@ -77,6 +79,7 @@ export const listTeachers = asyncHandler(async (req, res) => {
         subjects: { select: { id: true, name: true, grade: true, color: true } },
         user: { select: { id: true, email: true, isActive: true, lastLoginAt: true } },
         institute: { select: { id: true, name: true } },
+        branch: { select: { id: true, name: true, code: true } },
       },
     }),
   ]);

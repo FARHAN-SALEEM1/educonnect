@@ -177,6 +177,52 @@ describe("who is on which campus", () => {
   });
 });
 
+describe("teachers belong to a campus too", () => {
+  /**
+   * Its own campus, not one the blocks below still need.
+   *
+   * The first version closed GLB to prove the staff survive it, and the
+   * cross-tenant tests further down could then no longer find GLB to be
+   * refused access to. A test that dismantles a fixture other tests read is a
+   * test that makes its neighbours lie.
+   */
+  let own;
+
+  it("moves them and filters the staff list down", async () => {
+    if (skip()) return;
+    own = (await mk({ name: "Staff Campus", code: "STF" })).body.data.id;
+
+    const made = await as(admin)
+      .post("/api/teachers")
+      .send({ name: "Campus Sir", email: `campus.sir.${stamp}@test.edu`, phone: "03001234567" });
+    expect(made.status).toBe(201);
+
+    const res = await as(admin)
+      .post(`/api/branches/${own}/reassign`)
+      .send({ teacherIds: [made.body.data.id] });
+    expect(res.body.data.teachers).toBe(1);
+
+    const only = (await as(admin).get(`/api/teachers?branchId=${own}&limit=100`)).body.data;
+    expect(only).toHaveLength(1);
+    expect(only[0].branch?.code).toBe("STF");
+
+    const counted = (await as(admin).get("/api/branches")).body.data.find((b) => b.code === "STF");
+    expect(counted.teacherCount).toBe(1);
+  });
+
+  it("keeps them on the staff list when their campus closes", async () => {
+    if (skip()) return;
+    const before = (await as(admin).get("/api/teachers?limit=100")).body.data.length;
+
+    const res = await as(admin).delete(`/api/branches/${own}`);
+    expect(res.body.data.teachers).toBe(1);
+
+    const after = (await as(admin).get("/api/teachers?limit=100")).body.data;
+    expect(after.length, "a building shutting is not a teacher leaving").toBe(before);
+    expect(after.every((t) => t.branch?.code !== "STF")).toBe(true);
+  });
+});
+
 describe("closing a campus", () => {
   it("keeps every child on the school's roll", async () => {
     if (skip()) return;
