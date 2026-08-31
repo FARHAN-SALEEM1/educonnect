@@ -989,6 +989,83 @@ asal kaam hain, andaza nahi — is liye ye **naapa hua** chhor raha hoon, **kiya
 
 ---
 
+## 6x. EK SCHOOL, KAI CAMPUS — aur asli jaisa data (2026-08-31)
+
+User: *"aik school ki multiple branches b ho skti, uska solution nikalo aur uspe b testing.
+koi bug nai chahiye."*
+
+### Faisla: branch **tenant nahi**, institute ke andar taqseem hai
+
+Teen imarton wale school ke paas pehle do hi raaste the:
+
+```
+teen alag institutes  →  teen login, teen subscription, koi mushtarak roll nahi
+ek institute          →  ye bata hi nahi sakte ke bacha kis imarat mein hai
+```
+
+Dono wo nahi jo school maang raha tha. To **institute hi wo hadd rahi jis se har query
+scope hoti hai** — yehi cheez saari multi-tenancy ki mehnat bachati hai — aur branch us ke
+andar ek filter hai. Controller mein gyara scoped reads hain, aur spec sabit karta hai:
+scoping hataate hi **chhe tests fail** ho jate hain.
+
+### Poora feature opt-in hai
+
+`branchId` students aur teachers par nullable hai. Campus filter sirf tab render hota hai
+jab school ke campuses hon, aur management card **Settings mein** hai — na ke chaudhwan
+tab jo koi kholta hi nahi. **Ek imarat wale school ko wahi product dikhta hai jo kal tha.**
+
+### Do usool jo transaction ke andar hain
+
+**Campus band karne se log band nahi hote** — `SET NULL`, cascade nahi. Jis bachay ki
+imarat band hui wo *bila-campus bacha* hai, *gaya hua bacha* nahi; hataana alag screen ka
+alag button hai. Endpoint batata hai kitne unassign huye.
+
+**Sirf ek main campus**, usi transaction mein jo doosra set karta hai — do hone se "naya
+bacha kahan jayega" row order par chala jata.
+
+### Asli jaisa data — Kaggle ke baghair
+
+Kaggle ke liye API token chahiye jo is machine par nahi, aur main user se key mangwa kar
+khud daalne wala nahi. Jo public name datasets bina auth ke milte hain wo American aur
+Spanish hain — un se Lahore ka school Jennifers se bhar jata.
+
+To `scripts/seed-realistic.js`. `scale-probe` ye batata hai ke "jhelta hai ya nahi" aur har
+bachay ka naam Student 417 rakhta hai — timing ke liye theek, screen dekhne ke liye
+bekaar: har row ek jaisa sort hota hai aur har search har cheez se match karti hai.
+
+```
+Roots Grammar School · 3 campuses · 2000 students · 30 teachers
+12,000 enrolments · 60,000 attendance · 6,000 challans · 8.2s
+
+Basit Rashid · Iqra Tariq · Hussain Raza · Sadia Malik · Ehtisham Iqbal
+```
+
+### Naapa gaya
+
+```
+GET /students (page 1)     325 ms      GET /dashboard/admin   430 ms
+GET /students?branchId     245 ms      GET /teachers          292 ms
+browser: 2000 → 667 rows ka campus filter   155 ms
+mobile: chaudah screens, sifar overflow
+```
+
+### Do cheezein jo isi kaam mein pakri gayin
+
+**`db:verify` mein branch add karna bhool gaya tha** — aur ek test hai jo yaqeeni banata
+hai ke schema ka har model gina jaye. Us ne mujh se pehle pakar liya.
+
+**Section heading ke buttons phone par title par charh rahe the.** `SecHead` ek flex row
+hai; 26px serif title aur do buttons 375px mein nahi samate the. Phone par ab column hai.
+
+### Ek side effect jo khud sabaq hai
+
+Vacuity check ke liye jab maine jaan boojh kar scoping hatai, us run mein spec ne **demo
+school ka campus dhoondh kar rename kar diya** ("Taken"). Yani test ne apni baat khud
+sabit kar di — aur ye yaad dahani bhi ke scoping hataana asli asar rakhta hai. Naam wapas
+kar diya gaya.
+
+---
+
 ## 6w. URDU — sirf walidain ke liye (2026-08-31)
 
 Admin aur teachers saara din English software chalate hain. Jo walid ye dekh raha hai ke

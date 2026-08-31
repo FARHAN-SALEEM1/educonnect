@@ -134,6 +134,12 @@ const css=`
        squeezed into what is left, one word per line. It stacks instead. */
     .ec-planrow{flex-direction:column!important;align-items:flex-start!important;gap:10px!important;}
     .ec-planrow>div:last-child{text-align:left!important;}
+
+    /* A screen heading and its buttons share one row. On a phone a 26px serif
+       title and two buttons do not both fit, and the buttons were landing on
+       top of the word they sit beside. They drop underneath instead. */
+    .ec-sechead{flex-direction:column!important;align-items:flex-start!important;gap:12px!important;}
+    .ec-sechead>*:last-child{width:100%!important;}
     /* Fixed-height panes (message inbox) would trap content on mobile. */
     [style*="height:520px"],[style*="height: 520px"]{height:auto!important;}
     main{padding:18px 14px!important;}
@@ -375,7 +381,7 @@ const Modal=({title,onClose,children,width=500})=>(
   </div>
 );
 const SecHead=({pre,title,action})=>(
-  <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-end",marginBottom:24,animation:"fadeUp .35s ease"}}>
+  <div className="ec-sechead" style={{display:"flex",justifyContent:"space-between",alignItems:"flex-end",marginBottom:24,animation:"fadeUp .35s ease"}}>
     <div>
       <div style={{fontSize:10,fontWeight:700,color:T.muted,letterSpacing:"1.8px",textTransform:"uppercase",marginBottom:5}}>{pre}</div>
       <h1 style={{fontFamily:"Georgia,serif",fontSize:32,fontWeight:800,color:T.ink,lineHeight:1.1}}>{title}</h1>
