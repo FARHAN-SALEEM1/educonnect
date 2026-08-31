@@ -6672,7 +6672,7 @@ const AdminPortal=({user,db,setDb,onLogout,onReload})=>{
 
   /** Edit an existing notice. The API re-checks institute ownership. */
   const UserModal=({type})=>{
-    const[f,setF]=useState({name:"",email:"",phone:"",grade:"",section:"",roll:"",rel:"",newSubject:"",parentId:""});
+    const[f,setF]=useState({name:"",email:"",phone:"",grade:"",section:"",roll:"",rel:"",newSubject:"",parentId:"",branchId:""});
     const s=(k,v)=>setF(x=>({...x,[k]:v}));
     /**
      * Lists, because both of these are lists.
@@ -6711,6 +6711,7 @@ const AdminPortal=({user,db,setDb,onLogout,onReload})=>{
             // A sibling joins the guardian the school already has, rather
             // than the family getting a second account for the same father.
             ...(f.parentId&&{parentId:f.parentId}),
+            ...(f.branchId&&{branchId:f.branchId}),
           });
         }else if(type==="Teacher"){
           const teaching=[...subjectIds];
@@ -6727,6 +6728,7 @@ const AdminPortal=({user,db,setDb,onLogout,onReload})=>{
             ...(first&&{designation:`${first} Teacher`}),
             createLogin:true,
             ...(teaching.length&&{subjectIds:teaching}),
+            ...(f.branchId&&{branchId:f.branchId}),
           });
         }else{
           made=await api.parents.create({
@@ -6775,7 +6777,20 @@ const AdminPortal=({user,db,setDb,onLogout,onReload})=>{
               <Sel label="Parent / Guardian" value={f.parentId} onChange={e=>s("parentId",e.target.value)}
                 options={[{v:"",l:"— none yet —"},...parents.map(p=>({v:p.id,l:guardianLabel(p)}))]}/>
             </div>
+            {/* Editing a child offered a campus and admitting one did not, so a
+                three-campus school had to save the new pupil and then reopen
+                them to say which building they attend. */}
+            {branches.length>0&&(
+              <div style={{gridColumn:"1/-1"}}>
+                <Sel label="Campus" value={f.branchId} onChange={e=>s("branchId",e.target.value)}
+                  options={[{v:"",l:"— not placed —"},...branches.map(b=>({v:b.id,l:b.name}))]}/>
+              </div>
+            )}
           </>}
+          {type==="Teacher"&&branches.length>0&&<div style={{gridColumn:"1/-1"}}>
+            <Sel label="Campus" value={f.branchId} onChange={e=>s("branchId",e.target.value)}
+              options={[{v:"",l:"— not placed —"},...branches.map(b=>({v:b.id,l:b.name}))]}/>
+          </div>}
           {type==="Teacher"&&<div style={{gridColumn:"1/-1"}}>
             <PickList label="Subjects Taught" value={subjectIds} onChange={setSubjectIds}
               options={schoolSubjects.map(x=>({v:x.id,l:subjectLabel(x)}))}
@@ -6845,7 +6860,7 @@ const AdminPortal=({user,db,setDb,onLogout,onReload})=>{
                 <div key={s.id} onClick={()=>setSelStu(selStu?.id===s.id?null:s)} style={{display:"flex",gap:12,alignItems:"center",padding:"11px 6px",borderBottom:`1px solid ${T.border}`,cursor:"pointer",background:selStu?.id===s.id?`${T.forest}05`:"transparent",borderRadius:selStu?.id===s.id?8:0}}>
                   <Av name={s.name} size={36} bg={`${T.forest}15`} color={T.forest} fs={12}/>
                   <div style={{flex:1}}><div style={{fontSize:13,fontWeight:600,color:T.ink}}>{s.name}</div><div style={{fontSize:11,color:T.muted}}>{s.grade} · Section {s.section} · Roll {s.roll}</div></div>
-                  <div style={{textAlign:"right"}}><div style={{fontSize:13,fontWeight:700,color:T.forest}}>{s.average}%</div><div style={{fontSize:10,color:T.muted}}>{s.rank?`Rank #${s.rank}`:"Unranked"}</div></div>
+                  <div style={{textAlign:"right"}}><div style={{fontSize:13,fontWeight:700,color:s.scored?T.forest:T.muted}}>{s.scored?`${s.average}%`:"—"}</div><div style={{fontSize:10,color:T.muted}}>{s.rank?`Rank #${s.rank}`:"Unranked"}</div></div>
                 </div>
               ))}
               <Btn onClick={()=>setTab("students")} out color={T.forest} full style={{marginTop:14,padding:"9px",fontSize:12}}>View All Students →</Btn>
@@ -6920,7 +6935,7 @@ const AdminPortal=({user,db,setDb,onLogout,onReload})=>{
                     fourth used to read a literal "82/100" AI score for every
                     student alike; the list payload carries no insight data, so
                     it now shows the subject average, which it does carry. */}
-                {[["Rank",selStu.rank?`#${selStu.rank}`:"—",T.purple],["Attendance",`${selStu.att.present}%`,T.success],["Average",`${selStu.average}%`,T.gold]].map(([l,v,c])=>(
+                {[["Rank",selStu.rank?`#${selStu.rank}`:"—",T.purple],["Attendance",selStu.att.days?`${selStu.att.present}%`:"—",T.success],["Average",selStu.scored?`${selStu.average}%`:"—",T.gold]].map(([l,v,c])=>(
                   <div key={l} style={{padding:"12px",background:T.paper,borderRadius:12,textAlign:"center"}}>
                     <div style={{fontFamily:"Georgia,serif",fontSize:20,fontWeight:800,color:c}}>{v}</div>
                     <div style={{fontSize:10,color:T.muted,marginTop:3}}>{l}</div>
@@ -6971,8 +6986,8 @@ const AdminPortal=({user,db,setDb,onLogout,onReload})=>{
                     <td style={{padding:"12px"}}><div style={{display:"flex",gap:10,alignItems:"center"}}><Av name={s.name} size={32} bg={`${T.forest}18`} color={T.forest} fs={11}/><span style={{fontSize:13,fontWeight:600,color:T.ink}}>{s.name}</span></div></td>
                     <td style={{padding:"12px",fontSize:13,color:T.muted}}>{s.grade} {s.section}</td>
                     <td style={{padding:"12px",fontSize:13,color:T.muted}}>{s.roll}</td>
-                    <td style={{padding:"12px",fontSize:13,fontWeight:700,color:T.forest}}>{s.average}%</td>
-                    <td style={{padding:"12px",fontSize:13,color:s.att.present>=90?T.success:T.warning,fontWeight:600}}>{s.att.present}%</td>
+                    <td style={{padding:"12px",fontSize:13,fontWeight:700,color:s.scored?T.forest:T.muted}}>{s.scored?`${s.average}%`:"—"}</td>
+                    <td style={{padding:"12px",fontSize:13,color:!s.att.days?T.muted:s.att.present>=90?T.success:T.warning,fontWeight:600}}>{s.att.days?`${s.att.present}%`:"—"}</td>
                     <td style={{padding:"12px"}}><Bdg label={s.dues>0?"Pending":"Paid"} color={s.dues>0?T.warning:T.success} bg={s.dues>0?`${T.warning}15`:`${T.success}15`}/></td>
                     <td style={{padding:"12px"}}><Bdg label={s.status==="active"?"Active":s.status.charAt(0).toUpperCase()+s.status.slice(1)} color={s.status==="active"?T.success:T.muted} bg={s.status==="active"?`${T.success}15`:`${T.muted}15`}/></td>
                     <td style={{padding:"12px",...stickyCol}}><RowActions name={s.name} busy={deleting===s.id} onEdit={()=>setEditing({type:"Student",record:s})} onDelete={()=>removeRow("Student",s)}/></td>
@@ -6999,7 +7014,7 @@ const AdminPortal=({user,db,setDb,onLogout,onReload})=>{
                   <span onClick={()=>setSelStu(null)} style={{cursor:"pointer",color:T.muted,fontSize:20}}>×</span>
                 </div>
                 <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:16}}>
-                  {[["Rank",selStu.rank?`#${selStu.rank}`:"—",T.purple],["Att.",`${selStu.att.present}%`,T.success],["Avg.",`${selStu.average}%`,T.gold]].map(([l,v,c])=>(
+                  {[["Rank",selStu.rank?`#${selStu.rank}`:"—",T.purple],["Att.",selStu.att.days?`${selStu.att.present}%`:"—",T.success],["Avg.",selStu.scored?`${selStu.average}%`:"—",T.gold]].map(([l,v,c])=>(
                     <div key={l} style={{padding:"10px",background:T.paper,borderRadius:10,textAlign:"center"}}>
                       <div style={{fontFamily:"Georgia,serif",fontSize:18,fontWeight:800,color:c}}>{v}</div>
                       <div style={{fontSize:10,color:T.muted}}>{l}</div>
@@ -8503,7 +8518,7 @@ const ParentPortal=({user,db,onLogout,onReload})=>{
             <p style={{color:T.muted,fontSize:14,marginTop:5}}>{t("Here's everything about ")}<b>{student.name}</b>{t("'s academic journey.")}</p>
           </div>
           <div className="ec-pair" style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:14,marginBottom:20}}>
-            <KPI label={t("Average")} value={`${student.average}%`} color={T.forest} icon="◈" sub={t("Across all subjects")}/>
+            <KPI label={t("Average")} value={student.scored?`${student.average}%`:"—"} color={student.scored?T.forest:T.muted} icon="◈" sub={student.scored?t("Across all subjects"):t("No marks recorded yet")}/>
             {/* A child with nothing marked has no position — the same rule the
                 result card applies. Showing "#0 of 5" was the old bug, and
                 showing "#4 of 5" beside a blank card was the older one. */}

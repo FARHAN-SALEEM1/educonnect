@@ -116,6 +116,34 @@ ok(
   "the export is reading the drawn window rather than the data"
 );
 
+console.log("\n=== a zero nobody scored ===");
+
+/**
+ * The API averages the enrolments that carry a score and returns 0 when none
+ * of them do, because the ranking sorts on that number. Printed as it stands,
+ * a child admitted this morning appeared in the roster at 0% average and 0%
+ * attendance — not a blank, but the school saying they sat every paper and got
+ * nothing right, and were absent every day since. This codebase has fixed the
+ * same confusion three times already: rank #0, a subject's score, and an AI
+ * standing of "Excellent" for a child with nothing marked.
+ *
+ * These match on source text rather than regex-of-regex, which keeps them
+ * readable next to the lines they are guarding.
+ */
+for (const [label, needle] of [
+  ["the roster's average", '{s.scored?`${s.average}%`:"—"}'],
+  ["the roster's attendance", '{s.att.days?`${s.att.present}%`:"—"}'],
+  ["the detail panel", 'selStu.scored?`${selStu.average}%`:"—"'],
+  ["the parent portal's headline", 'student.scored?`${student.average}%`:"—"'],
+])
+  ok(`${label} says "—" rather than 0%`, src.includes(needle));
+
+ok(
+  "no bare average is printed in the roster",
+  !src.includes("}>{s.average}%</td>"),
+  "a raw {s.average}% is back in the table"
+);
+
 console.log("\n=== controls a finger has to reach ===");
 
 /**

@@ -376,6 +376,21 @@ export const toLegacyStudentSummary = (s) => ({
   score: Math.round(s.topScore ?? s.average ?? 0),
   // `average` is the mean across all subjects, used for ranking students.
   average: Math.round(s.average ?? 0),
+  /**
+   * Whether the average means anything yet — the student-level twin of
+   * `scored` on a subject.
+   *
+   * The API averages the enrolments that carry a score and returns 0 when
+   * none of them do, because the ranking sorts on that number. Printed as
+   * it stands, a child admitted this morning appeared in the roster at 0%,
+   * which is not a blank — it is the school saying they sat every paper and
+   * got nothing right. `topScore` is already null in exactly that case, so
+   * the signal was there; it was being rounded away.
+   *
+   * The detail shape has no `topScore`, and reads its subjects instead.
+   */
+  scored:
+    s.topScore !== null && s.topScore !== undefined ? true : hasAnyMark(s),
   color: s.topSubjectColor || "#2D6A4F",
 
   att: toLegacyAttendance(s.attendance),
