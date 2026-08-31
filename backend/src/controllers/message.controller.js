@@ -80,6 +80,48 @@ export const listMessages = asyncHandler(async (req, res) => {
   return ok(res, data, "Messages fetched", { ...pageMeta(total, page, limit), unread });
 });
 
+/**
+ * Every message in the conversation, from wherever you entered it.
+ *
+ * A reply's parent is the message it answered, so a back-and-forth is a chain
+ * rather than a root with a flat list under it: A → B → C. Returning only the
+ * requested message's direct children meant opening A showed A and B, opening
+ * B showed B and C, and no screen ever showed the conversation. The portals
+ * rendered none of it at all, which hid the shape of the problem.
+ *
+ * So: walk up to the first message, then walk down through every reply. Threads
+ * are short — this is a handful of queries on a conversation between two
+ * people, not a general graph traversal.
+ */
+const wholeThread = async (id) => {
+  let rootId = id;
+  for (let hops = 0; hops < 50; hops++) {
+    const m = await prisma.message.findUnique({
+      where: { id: rootId },
+      select: { parentId: true },
+    });
+    if (!m?.parentId) break;
+    rootId = m.parentId;
+  }
+
+  const collected = [];
+  let frontier = [rootId];
+  for (let depth = 0; depth < 50 && frontier.length; depth++) {
+    const level = await prisma.message.findMany({
+      where: { id: { in: frontier } },
+      include: MESSAGE_INCLUDE,
+    });
+    collected.push(...level);
+    const kids = await prisma.message.findMany({
+      where: { parentId: { in: frontier } },
+      select: { id: true },
+    });
+    frontier = kids.map((k) => k.id);
+  }
+
+  return collected.sort((a, b) => a.createdAt - b.createdAt);
+};
+
 /** GET /api/messages/:id — opening a message marks it read. */
 export const getMessage = asyncHandler(async (req, res) => {
   const message = await prisma.message.findFirst({
@@ -87,11 +129,7 @@ export const getMessage = asyncHandler(async (req, res) => {
       id: req.params.id,
       OR: [{ senderId: req.user.id }, { recipientId: req.user.id }],
     },
-    include: {
-      ...MESSAGE_INCLUDE,
-      replies: { include: MESSAGE_INCLUDE, orderBy: { createdAt: "asc" } },
-      parent: { include: MESSAGE_INCLUDE },
-    },
+    include: { ...MESSAGE_INCLUDE, parent: { include: MESSAGE_INCLUDE } },
   });
 
   if (!message) throw ApiError.notFound("Message not found");
@@ -104,8 +142,25 @@ export const getMessage = asyncHandler(async (req, res) => {
     message.isRead = true;
   }
 
-  const replies = await Promise.all(message.replies.map(withRoleLabel));
-  return ok(res, { ...(await withRoleLabel(message)), replies });
+  /**
+   * The thread is filtered to what this reader is party to. Every turn of a
+   * two-person conversation qualifies; the filter is there so that a thread
+   * which somehow forked to a third person cannot show them anything.
+   */
+  const thread = (await wholeThread(message.id)).filter(
+    (m) => m.senderId === req.user.id || m.recipientId === req.user.id
+  );
+
+  const head = thread[0] ?? message;
+  const rest = thread.slice(1);
+
+  return ok(res, {
+    ...(await withRoleLabel(head)),
+    // The message actually asked for, which is not always the head of the
+    // thread — the portals highlight it and mark it read.
+    openedId: message.id,
+    replies: await Promise.all(rest.map(withRoleLabel)),
+  });
 });
 
 /**

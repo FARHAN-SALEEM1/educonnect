@@ -190,6 +190,81 @@ describe("replying", () => {
     expect(teacherInbox.body.data.some((m) => m.id === reply.body.data.id)).toBe(true);
   });
 
+  /**
+   * A reply's parent is the message it answered, so a conversation is a chain
+   * A -> B -> C rather than a root with a flat list under it. Returning only
+   * the direct children meant opening A showed A and B, opening B showed B and
+   * C, and no screen ever carried the whole exchange. The portals rendered none
+   * of it at all, which is what hid the shape of the problem.
+   */
+  it("hands back the whole conversation, from any message in it", async () => {
+    if (!ready()) return;
+    const contacts = await request(app).get("/api/messages/contacts").set("Authorization", `Bearer ${teacher}`);
+    const target = contacts.body.data.find((c) => c.role === "ADMIN");
+
+    const first = track(await send(teacher, {
+      recipientId: target.id,
+      subject: "Regression — whole thread",
+      body: "First.",
+    }));
+    const firstId = first.body.data.id;
+
+    const second = await request(app)
+      .post(`/api/messages/${firstId}/reply`)
+      .set("Authorization", `Bearer ${admin}`)
+      .send({ body: "Second." });
+    created.push(second.body.data.id);
+
+    // Answering the answer, which is what makes it a chain rather than a list.
+    const third = await request(app)
+      .post(`/api/messages/${second.body.data.id}/reply`)
+      .set("Authorization", `Bearer ${teacher}`)
+      .send({ body: "Third." });
+    created.push(third.body.data.id);
+
+    for (const [who, token] of [["the teacher", teacher], ["the admin", admin]]) {
+      for (const [where, id] of [
+        ["the first message", firstId],
+        ["the middle of it", second.body.data.id],
+        ["the last reply", third.body.data.id],
+      ]) {
+        const res = await request(app)
+          .get(`/api/messages/${id}`)
+          .set("Authorization", `Bearer ${token}`);
+
+        expect(res.status).toBe(200);
+        const turns = [res.body.data, ...res.body.data.replies];
+        expect(
+          turns.map((m) => m.body),
+          `${who} opening ${where} should see all three turns, in order`
+        ).toEqual(["First.", "Second.", "Third."]);
+      }
+    }
+  });
+
+  it("says which message was opened, so the portal can mark it read", async () => {
+    if (!ready()) return;
+    const contacts = await request(app).get("/api/messages/contacts").set("Authorization", `Bearer ${teacher}`);
+    const target = contacts.body.data.find((c) => c.role === "ADMIN");
+
+    const first = track(await send(teacher, {
+      recipientId: target.id,
+      subject: "Regression — opened id",
+      body: "Head.",
+    }));
+    const reply = await request(app)
+      .post(`/api/messages/${first.body.data.id}/reply`)
+      .set("Authorization", `Bearer ${admin}`)
+      .send({ body: "Tail." });
+    created.push(reply.body.data.id);
+
+    const res = await request(app)
+      .get(`/api/messages/${reply.body.data.id}`)
+      .set("Authorization", `Bearer ${teacher}`);
+
+    expect(res.body.data.body, "the thread is returned from its head").toBe("Head.");
+    expect(res.body.data.openedId, "but it remembers what was asked for").toBe(reply.body.data.id);
+  });
   it("refuses to reply to a thread the caller is not part of", async () => {
     if (!ready()) return;
     const contacts = await request(app).get("/api/messages/contacts").set("Authorization", `Bearer ${teacher}`);

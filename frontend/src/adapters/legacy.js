@@ -499,6 +499,10 @@ export const toLegacyMessage = (m, currentUserId) => ({
   subj: m.subject,
   body: m.body,
   time: timeAgo(m.createdAt),
+  // Which thread this belongs to. A reply opened from the inbox showed one
+  // line and no conversation, because the replies hang off the root and a
+  // reply has none of its own — so the portals ask for the root instead.
+  parentId: m.parentId ?? null,
   // Kept raw as well: the parent portal re-formats it in Urdu.
   at: m.createdAt,
   // "unread" only means anything for messages addressed to you.

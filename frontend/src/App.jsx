@@ -3,7 +3,7 @@ import api from "./api/endpoints.js";
 import { t, tc, tn, useLang, getLang, setLang } from "./i18n.js";
 import { tokens, restoreSession, setSessionExpiredHandler } from "./api/client.js";
 import { useDb, fetchAll } from "./hooks/useDb.js";
-import { timeAgo, toLegacyUser } from "./adapters/legacy.js";
+import { timeAgo, toLegacyMessage, toLegacyUser } from "./adapters/legacy.js";
 import { downloadCsv, downloadJson, stamped } from "./utils/download.js";
 import { readImportSheet, IMPORT_COLUMNS, importTemplateRows } from "./utils/csv.js";
 import {
@@ -295,6 +295,42 @@ const Bdg=({label,color,bg,style={}})=>(
  * widen it. `total` is the filtered total, not the roll: after a search it
  * counts what matched.
  */
+/**
+ * A message and everything said back.
+ *
+ * Replies were stored, delivered and never shown. A parent wrote to a teacher,
+ * the teacher answered, and neither of them could see the answer: every portal
+ * rendered `selMsg.body` and stopped there, so a conversation looked like a
+ * single message that nobody had responded to. The adapter had been mapping
+ * `replies` for its own amusement — nothing read them, and the list endpoint
+ * does not even send them, only a count.
+ *
+ * Sides follow authorship rather than role, so the same component works in all
+ * three portals: your own words on the right, theirs on the left.
+ */
+const MessageThread=({root,meId})=>{
+  if(!root)return null;
+  const turns=[root,...(root.replies??[])];
+  return(
+    <div style={{display:"flex",flexDirection:"column",gap:14}}>
+      {turns.map((m,i)=>{
+        const mine=Boolean(meId&&m.fromId===meId);
+        return(
+          <div key={m.id??i} style={{display:"flex",flexDirection:"column",alignItems:mine?"flex-end":"flex-start"}}>
+            <div style={{fontSize:11,color:T.muted,marginBottom:4,padding:"0 4px"}}>
+              {mine?"You":m.from}{m.fromRole?` · ${m.fromRole}`:""} · {m.time}
+            </div>
+            <div style={{background:mine?`${T.forest}0E`:T.paper,borderRadius:14,padding:"14px 18px",maxWidth:"min(560px, 88%)",
+              fontSize:14,color:T.ink,lineHeight:1.85,border:`1px solid ${mine?`${T.forest}22`:T.border}`,whiteSpace:"pre-wrap"}}>
+              {m.body}
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+};
+
 const ShowMore=({shown,total,page,onMore,onAll})=>{
   if(total<=shown)return null;
   return(
@@ -5018,6 +5054,11 @@ const AdminPortal=({user,db,setDb,onLogout,onReload})=>{
   /** Opening a message marks it read, so the nav badge means something. */
   const openAdminMessage=async m=>{
     setSelMsg(m);setReplyNote("");
+    // The list carries a reply count and no replies, so the thread has to be
+    // asked for. Falling back to the list object keeps the message readable
+    // if that call fails.
+    try{ setSelMsg(toLegacyMessage(await api.messages.get(m.parentId??m.id),user.id)); }
+    catch{/* the list copy is still worth reading */}
     if(!m.unread)return;
     try{ await api.messages.markRead(m.id); onReload?.(); }
     catch{/* a failed read receipt shouldn't stop them reading it */}
@@ -5029,6 +5070,10 @@ const AdminPortal=({user,db,setDb,onLogout,onReload})=>{
     setReply("");setReplyBusy(true);setReplyNote("");
     try{
       await api.messages.reply(selMsg.id,body);
+      // Put it in the thread they are reading, rather than leaving them to
+      // wonder whether it went: `onReload` refreshes the list, and the list
+      // has never carried replies.
+      try{ setSelMsg(toLegacyMessage(await api.messages.get(selMsg.id),user.id)); }catch{/* the banner already said it sent */}
       setReplyNote(`Reply sent to ${selMsg.from}.`);
       setTimeout(()=>setReplyNote(""),2500);
       onReload?.();
@@ -7261,7 +7306,7 @@ const AdminPortal=({user,db,setDb,onLogout,onReload})=>{
                     <div style={{fontSize:12,color:T.muted}}>{selMsg.from} · {selMsg.fromRole} → {selMsg.to} · {selMsg.time}</div>
                   </div>
                   <div style={{flex:1,padding:"26px",overflowY:"auto"}}>
-                    <div style={{background:T.paper,borderRadius:14,padding:"20px 24px",maxWidth:560,fontSize:14,color:T.ink,lineHeight:1.85,border:`1px solid ${T.border}`}}>{selMsg.body}</div>
+                    <MessageThread root={selMsg} meId={user.id}/>
                   </div>
                   {replyNote&&<div style={{background:`${T.success}12`,color:T.success,padding:"10px 26px",fontSize:13,fontWeight:600,border:`1px solid ${T.success}30`}}>{replyNote}</div>}
                   <div style={{padding:"16px 26px",borderTop:`1px solid ${T.border}`,display:"flex",gap:10}}>
@@ -7441,6 +7486,10 @@ const TeacherPortal=({user,db,onLogout,onReload,onUser})=>{
     setReply("");setReplyBusy(true);setReplySent("");
     try{
       await api.messages.reply(selMsg.id,body);
+      // Put it in the thread they are reading, rather than leaving them to
+      // wonder whether it went: `onReload` refreshes the list, and the list
+      // has never carried replies.
+      try{ setSelMsg(toLegacyMessage(await api.messages.get(selMsg.id),user.id)); }catch{/* the banner already said it sent */}
       setReplySent(`Reply sent to ${selMsg.from}.`);
       setTimeout(()=>setReplySent(""),2500);
       onReload?.();
@@ -7455,6 +7504,11 @@ const TeacherPortal=({user,db,onLogout,onReload,onUser})=>{
   /** Opening a message marks it read, so the sidebar badge means something. */
   const openMessage=async m=>{
     setSelMsg(m);
+    // The list carries a reply count and no replies, so the thread has to be
+    // asked for. Falling back to the list object keeps the message readable
+    // if that call fails.
+    try{ setSelMsg(toLegacyMessage(await api.messages.get(m.parentId??m.id),user.id)); }
+    catch{/* the list copy is still worth reading */}
     if(!m.unread)return;
     try{
       await api.messages.markRead(m.id);
@@ -8261,7 +8315,7 @@ const TeacherPortal=({user,db,onLogout,onReload,onUser})=>{
                     <div style={{fontSize:12,color:T.muted}}>{selMsg.from} · {selMsg.fromRole} → {selMsg.to} · {selMsg.time}</div>
                   </div>
                   <div style={{flex:1,padding:"26px",overflowY:"auto"}}>
-                    <div style={{background:T.paper,borderRadius:14,padding:"20px 24px",maxWidth:560,fontSize:14,color:T.ink,lineHeight:1.85,border:`1px solid ${T.border}`}}>{selMsg.body}</div>
+                    <MessageThread root={selMsg} meId={user.id}/>
                   </div>
                   {replySent&&<div style={{background:`${T.success}12`,color:T.success,padding:"10px 26px",fontSize:13,fontWeight:600,border:`1px solid ${T.success}30`}}>{replySent}</div>}
                   <div style={{padding:"16px 26px",borderTop:`1px solid ${T.border}`,display:"flex",gap:10}}>
@@ -8426,6 +8480,10 @@ const ParentPortal=({user,db,onLogout,onReload})=>{
     setReply("");
     try{
       await api.messages.reply(selMsg.id,body);
+      // Put it in the thread they are reading, rather than leaving them to
+      // wonder whether it went: `onReload` refreshes the list, and the list
+      // has never carried replies.
+      try{ setSelMsg(toLegacyMessage(await api.messages.get(selMsg.id),user.id)); }catch{/* the banner already said it sent */}
       setSent(true);
       setTimeout(()=>setSent(false),2500);
       onReload?.();
@@ -8945,7 +9003,7 @@ const ParentPortal=({user,db,onLogout,onReload})=>{
                   </div>
                 )}
                 {boxMsgs.map(m=>(
-                  <div key={m.id} onClick={()=>{setSelMsg(m);setMsgs(prev=>prev.map(x=>x.id===m.id?{...x,unread:false}:x));}}
+                  <div key={m.id} onClick={async()=>{setSelMsg(m);setMsgs(prev=>prev.map(x=>x.id===m.id?{...x,unread:false}:x));try{setSelMsg(toLegacyMessage(await api.messages.get(m.parentId??m.id),user.id));}catch{/* the list copy still reads */}}}
                     style={{padding:"13px 16px",cursor:"pointer",borderBottom:`1px solid ${T.border}`,background:selMsg?.id===m.id?`${T.forest}09`:"transparent",borderLeft:`3px solid ${selMsg?.id===m.id?T.forest:"transparent"}`,transition:"background .15s"}}>
                     <div style={{display:"flex",gap:9,alignItems:"flex-start"}}>
                       {/* In Sent the useful name is the recipient, not our own. */}
@@ -8972,7 +9030,7 @@ const ParentPortal=({user,db,onLogout,onReload})=>{
                     </div>
                   </div>
                   <div style={{flex:1,padding:"26px",overflowY:"auto"}}>
-                    <div style={{background:T.paper,borderRadius:14,padding:"20px 24px",maxWidth:580,fontSize:14,color:T.ink,lineHeight:1.85,border:`1px solid ${T.border}`}}>{selMsg.body}</div>
+                    <MessageThread root={selMsg} meId={user.id}/>
                   </div>
                   {sent&&<div style={{background:`${T.success}12`,color:T.success,padding:"10px 26px",fontSize:13,fontWeight:600,border:`1px solid ${T.success}30`}}>✓ Reply sent successfully</div>}
                   <div style={{padding:"16px 26px",borderTop:`1px solid ${T.border}`,display:"flex",gap:10}}>
