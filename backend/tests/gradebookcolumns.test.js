@@ -220,6 +220,19 @@ describe("two papers with the same name", () => {
     expect(midterm[0].label, "nothing to disambiguate, so no date is added").toBe("Mid Term");
   });
 
+  it("names the day the paper was actually sat", async () => {
+    if (skip()) return;
+    const b = await book();
+    const dated = b.columns.filter((c) => c.title === "quiz");
+
+    /**
+     * `takenOn` is a date, not a moment — stored at midnight UTC. Formatted in
+     * a server zone behind UTC it names the day before, and a quiz sat on the
+     * 17th was headed "16 Aug". The label is what a teacher uses to tell two
+     * papers apart, so a day out is worse than no date at all.
+     */
+    expect(dated.map((c) => c.label)).toEqual(["quiz · 3 Aug", "quiz · 17 Aug"]);
+  });
   it("reads left to right in the order they were sat", async () => {
     if (skip()) return;
     const b = await book();

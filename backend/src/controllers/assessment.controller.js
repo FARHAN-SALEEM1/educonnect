@@ -354,10 +354,18 @@ export const gradebook = asyncHandler(async (req, res) => {
          * The date appears only when the title alone would not tell two
          * columns apart, and the number only when one sitting was not enough,
          * so a book with no repeats keeps its clean headings.
+         *
+         * Read back in UTC, because `takenOn` is a date rather than a moment:
+         * it is stored at midnight UTC, and formatting that in a server zone
+         * behind UTC names the day before. A paper sat on the 31st was labelled
+         * "30 Aug" — the same mistake the absence mail already carries a comment
+         * about, where a register saved for Wednesday told a guardian their
+         * child was absent on Tuesday.
          */
         const dated =
           titleCounts.get(sample.title) > 1 && sample.takenOn
             ? `${sample.title} · ${sample.takenOn.toLocaleDateString("en-GB", {
+                timeZone: "UTC",
                 day: "numeric",
                 month: "short",
               })}`
