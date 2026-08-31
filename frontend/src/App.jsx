@@ -328,7 +328,23 @@ const Sel=({label,options,value,onChange,style={}})=>(
   <div style={{marginBottom:14,...style}}>
     {label&&<div style={{fontSize:11,fontWeight:700,color:T.muted,marginBottom:5,textTransform:"uppercase",letterSpacing:".6px"}}>{label}</div>}
     <select {...(onChange?{value:value??"",onChange}:{defaultValue:value??""})} style={{width:"100%",padding:"10px 14px",borderRadius:10,border:`1.5px solid ${T.border}`,fontSize:13,color:T.ink,background:T.paper,outline:"none"}}>
-      {options.map(o=><option key={o.v||o} value={o.v||o}>{o.l||o}</option>)}
+      {/*
+        `??`, not `||`.
+
+        Every filter in the product offers its own escape hatch as the first
+        option — {v:"",l:"All grades"} — and an empty string is falsy, so
+        `o.v||o` handed the <option> the whole object and it rendered
+        value="[object Object]". Picking "All grades" then set the filter to
+        that string rather than clearing it, and the roster filtered by a
+        grade nobody is in: an admin narrowed to Grade 5, saw 200 of 2,000,
+        went back to All grades and was told the school had none. The select
+        still read "All grades", because the value it was given matched no
+        option and it fell back to displaying the first.
+
+        A plain string option still works: `o.v` is undefined for those, and
+        `??` falls through exactly as `||` did.
+      */}
+      {options.map(o=><option key={`${o.v??o}`} value={o.v??o}>{o.l??o}</option>)}
     </select>
   </div>
 );
@@ -5074,6 +5090,7 @@ const AdminPortal=({user,db,setDb,onLogout,onReload})=>{
   const[stuStatus,setStuStatus]=useState("");
   const[stuBranch,setStuBranch]=useState("");
   const[tchBranch,setTchBranch]=useState("");
+
   const[parQ,setParQ]=useState("");
 
   const gradeOptions=useMemo(()=>{
@@ -5092,6 +5109,19 @@ const AdminPortal=({user,db,setDb,onLogout,onReload})=>{
    */
   const branches=db.branches??[];
   const branchOptions=[{v:"",l:"All campuses"},...branches.map(b=>({v:b.id,l:b.name}))];
+
+  /**
+   * A campus that has just been closed is not a filter any more.
+   *
+   * Closing one while its roster was on screen left the id sitting in this
+   * state. Nothing matches a deleted branch, so the list reported zero
+   * students out of two thousand — and the dropdown, unable to find that id
+   * among its options, innocently read "All campuses" above the empty table.
+   */
+  useEffect(()=>{
+    if(stuBranch&&!branches.some(b=>b.id===stuBranch))setStuBranch("");
+    if(tchBranch&&!branches.some(b=>b.id===tchBranch))setTchBranch("");
+  },[branches,stuBranch,tchBranch]);
 
   const statusOptions=[
     {v:"",l:"All statuses"},{v:"active",l:"Active"},{v:"inactive",l:"Inactive"},

@@ -9,7 +9,9 @@
     "build": "vite build",
     "preview": "vite preview",
     "check:csv": "node scripts/check-csv.mjs",
-    "check:urdu": "node scripts/check-urdu.mjs"
+    "check:urdu": "node scripts/check-urdu.mjs",
+    "check:ui": "node scripts/check-ui.mjs",
+    "check": "npm run check:csv && npm run check:urdu && npm run check:ui"
   },
   "dependencies": {
     "react": "^18.3.1",
