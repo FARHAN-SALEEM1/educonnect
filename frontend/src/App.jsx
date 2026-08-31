@@ -2169,8 +2169,14 @@ const MessageComposer=({onClose,onSent,studentId=null,title="New Message"})=>{
  * Audience is chosen when publishing and left alone when editing: the PATCH
  * omits it, so the notice keeps whatever audience it already had.
  */
+/*
+ * Two of these used to be the same choice. "All (Students, Parents,
+ * Teachers)" and "Everyone" both sent [], so the dropdown offered the same
+ * action twice under different names — and the longer one named an audience
+ * that does not exist: students have no accounts here, only their guardians
+ * do. A notice reaches the school office, its teachers and its parents.
+ */
 const NOTICE_AUDIENCES={
-  "All (Students, Parents, Teachers)":[],
   "Everyone":[],
   "Parents only":["PARENT"],
   "Teachers only":["TEACHER"],
