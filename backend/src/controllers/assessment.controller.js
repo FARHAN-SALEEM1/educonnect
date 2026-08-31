@@ -10,6 +10,7 @@ import { resolveSession, sessionFilter } from "../services/session.service.js";
 import { findAccessibleSubject } from "../utils/access.js";
 import { assessmentAverage } from "../utils/academics.js";
 import { policyFor } from "../services/grading.service.js";
+import { count } from "../utils/plural.js";
 
 /** Where-clause that keeps teachers to their own subjects. */
 const scopeWhere = (req) => ({
@@ -204,7 +205,7 @@ export const bulkCreateAssessments = asyncHandler(async (req, res) => {
   return created(
     res,
     { recorded: rows.length, skipped },
-    `${title} recorded for ${rows.length} student(s)`
+    `${title} recorded for ${count(rows.length,"student")}`
   );
 });
 

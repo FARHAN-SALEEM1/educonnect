@@ -1,4 +1,5 @@
 import { prisma } from "../config/prisma.js";
+import { count as plural } from "../utils/plural.js";
 
 /**
  * Housekeeping that would otherwise grow unbounded.
@@ -19,7 +20,7 @@ export async function purgeExpiredTokens() {
     },
   });
 
-  if (count) console.log(`[maintenance] purged ${count} expired refresh token(s)`);
+  if (count) console.log(`[maintenance] purged ${plural(count,"expired refresh token")}`);
   return count;
 }
 
@@ -31,7 +32,7 @@ export async function purgeExpiredResetTokens() {
     },
   });
 
-  if (count) console.log(`[maintenance] purged ${count} used/expired reset token(s)`);
+  if (count) console.log(`[maintenance] purged ${plural(count,"used/expired reset token")}`);
   return count;
 }
 
@@ -53,7 +54,7 @@ export async function expireLapsedSubscriptions() {
     data: { status: "EXPIRED" },
   });
 
-  if (count) console.log(`[maintenance] ${count} subscription(s) expired`);
+  if (count) console.log(`[maintenance] ${plural(count,"subscription")} expired`);
   return count;
 }
 

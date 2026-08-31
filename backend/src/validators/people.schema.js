@@ -95,6 +95,15 @@ export const promoteStudentsSchema = z.object({
 
 export const importStudentsSchema = z.object({
   rows: z.array(importRow).min(1, "The file has no rows").max(2000, "Import at most 2000 rows at a time"),
+  /**
+   * The campus the whole file belongs to.
+   *
+   * Per file rather than per row: a school with three buildings exports one
+   * roster at a time, and a `campus` column would have to be spelled the same
+   * way on two thousand lines to mean anything.
+   */
+  branchId: z.string().optional().nullable(),
+
   /** false (default) = all-or-nothing; true = import the valid rows anyway. */
   partial: z.boolean().optional(),
   createParents: z.boolean().optional(),

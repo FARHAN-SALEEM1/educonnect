@@ -3,6 +3,7 @@ import { ApiError } from "../utils/ApiError.js";
 import { asyncHandler } from "../utils/asyncHandler.js";
 import { created, ok } from "../utils/response.js";
 import { audit } from "../utils/audit.js";
+import { count as plural } from "../utils/plural.js";
 
 /**
  * Academic classes — the school's own class/section structure.
@@ -232,7 +233,7 @@ export const assignStudents = asyncHandler(async (req, res) => {
     meta: { count },
   });
 
-  return ok(res, await withCounts(cls), `${count} student(s) moved into ${cls.name} ${cls.section}`);
+  return ok(res, await withCounts(cls), `${plural(count,"student")} moved into ${cls.name} ${cls.section}`);
 });
 
 /** A teacher must exist inside the same institute before being attached. */

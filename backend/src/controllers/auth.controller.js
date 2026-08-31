@@ -21,6 +21,7 @@ import { sendPasswordChanged, sendPasswordReset } from "../services/email.servic
 import { accessBlock } from "../utils/subscription.js";
 import { periodKey } from "../utils/academics.js";
 import { getSetting } from "./platform.controller.js";
+import { count as plural } from "../utils/plural.js";
 
 const publicUser = (user) => ({
   id: user.id,
@@ -332,7 +333,7 @@ export const refresh = asyncHandler(async (req, res) => {
 
     console.warn(
       `[security] refresh token reuse for user ${stored.userId} from ${req.ip} — ` +
-        `revoked ${count} live session(s)`
+        `revoked ${plural(count,"live session")}`
     );
     audit(req, {
       action: "auth.refresh_reuse",

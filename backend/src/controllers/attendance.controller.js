@@ -7,6 +7,7 @@ import { attendanceSummary, summaryFromCounts } from "../utils/academics.js";
 import { studentScopeWhere } from "../utils/access.js";
 import { DEFAULT_TIMEZONE, toStoredDate, todayIn } from "../utils/dates.js";
 import { alertGuardiansOfAbsence, newlyAbsent } from "../services/absence.service.js";
+import { count, hasHave } from "../utils/plural.js";
 
 /**
  * Every date in this controller is a calendar date in the *institute's*
@@ -279,13 +280,13 @@ export const markBulk = asyncHandler(async (req, res) => {
       guardiansNotified: alerts.notified,
       guardiansMissing: alerts.skipped,
     },
-    `Attendance saved for ${accepted.length} student(s)` +
+    `Attendance saved for ${count(accepted.length,"student")}` +
       (alerts.notified
-        ? `. ${alerts.notified} guardian(s) told about ${fresh.length} absence(s).`
+        ? `. ${count(alerts.notified,"guardian")} told about ${count(fresh.length,"absence")}.`
         : alerts.reason === "attendance-alerts-off" && fresh.length
-          ? `. ${fresh.length} absence(s) not announced — attendance alerts are off.`
+          ? `. ${count(fresh.length,"absence")} not announced — attendance alerts are off.`
           : alerts.skipped?.length
-            ? `. ${alerts.skipped.length} absent student(s) have no guardian linked.`
+            ? `. ${count(alerts.skipped.length,"absent student")} ${hasHave(alerts.skipped.length)} no guardian linked.`
             : "")
   );
 });

@@ -9,6 +9,7 @@ import { studentScopeWhere } from "../utils/access.js";
 import { sendFeeReminder } from "../services/email.service.js";
 import { notificationEnabled } from "../utils/notifications.js";
 import { DEFAULT_TIMEZONE, dateOnly, todayIn } from "../utils/dates.js";
+import { count } from "../utils/plural.js";
 
 /**
  * The day a challan falls due, as a calendar date.
@@ -232,7 +233,7 @@ export const generateInvoices = asyncHandler(async (req, res) => {
       totalBilled: result.count * feeAmount,
       heads: items ?? [],
     },
-    `${result.count} invoice(s) generated for ${periodLabel(period)}`
+    `${count(result.count,"invoice")} generated for ${periodLabel(period)}`
   );
 });
 
@@ -443,7 +444,7 @@ export const markOverdue = asyncHandler(async (req, res) => {
     data: { status: "OVERDUE", ...(lateFee && { lateFee }) },
   });
 
-  return ok(res, { updated: result.count }, `${result.count} invoice(s) marked overdue`);
+  return ok(res, { updated: result.count }, `${count(result.count,"invoice")} marked overdue`);
 });
 
 /**
@@ -564,8 +565,8 @@ export const sendFeeReminders = asyncHandler(async (req, res) => {
   return ok(
     res,
     { sent: recipients.length, invoices: invoices.length, recipients, skipped },
-    `Reminder sent to ${recipients.length} guardian(s) covering ${invoices.length} unpaid invoice(s)` +
-      (skipped.length ? `. ${skipped.length} student(s) skipped — no guardian linked.` : ".")
+    `Reminder sent to ${count(recipients.length,"guardian")} covering ${count(invoices.length,"unpaid invoice")}` +
+      (skipped.length ? `. ${count(skipped.length,"student")} skipped — no guardian linked.` : ".")
   );
 });
 

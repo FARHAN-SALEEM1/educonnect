@@ -2194,12 +2194,13 @@ const NoticeComposer=({notice=null,onClose,onSaved})=>{
  * server can know are called out in the UI: roll numbers that clash with
  * students already on file, and whether the plan has seats left.
  */
-const StudentImportModal=({onClose,onImported,seatsLeft=null})=>{
+const StudentImportModal=({onClose,onImported,seatsLeft=null,branches=[]})=>{
   const[fileName,setFileName]=useState("");
   const[sheet,setSheet]=useState(null);
   const[readErr,setReadErr]=useState("");
   const[partial,setPartial]=useState(false);
   const[createParents,setCreateParents]=useState(true);
+  const[branchId,setBranchId]=useState("");
   const[busy,setBusy]=useState(false);
   const[serverErr,setServerErr]=useState("");
   const[rowErrors,setRowErrors]=useState(null);
@@ -2260,7 +2261,7 @@ const StudentImportModal=({onClose,onImported,seatsLeft=null})=>{
     setBusy(true);setServerErr("");setRowErrors(null);
     try{
       const rows=sheet.records.map(({__line,...rest})=>rest);
-      const res=await api.students.import({rows,partial,createParents});
+      const res=await api.students.import({rows,partial,createParents,...(branchId&&{branchId})});
       setResult(res);
       onImported?.(res);
     }catch(x){
@@ -2419,6 +2420,15 @@ const StudentImportModal=({onClose,onImported,seatsLeft=null})=>{
               {serverErr&&rowErrors&&<div style={{fontSize:12,color:T.danger,marginTop:8}}>{serverErr}</div>}
 
               {/* ---- options ---- */}
+              {/* Per file, not per row: a school exports one campus's roster at a
+                  time, and a spelled-out campus column would have to agree with
+                  itself on two thousand lines to mean anything. */}
+              {branches.length>0&&(
+                <div style={{marginTop:16,paddingTop:14,borderTop:`1px solid ${T.border}`,maxWidth:320}}>
+                  <Sel label="Campus for this file" value={branchId} onChange={e=>setBranchId(e.target.value)}
+                    options={[{v:"",l:"— not placed —"},...branches.map(b=>({v:b.id,l:b.name}))]}/>
+                </div>
+              )}
               <div style={{display:"flex",gap:20,flexWrap:"wrap",marginTop:16,paddingTop:14,borderTop:`1px solid ${T.border}`}}>
                 <label style={{display:"flex",alignItems:"center",gap:8,fontSize:13,color:T.ink,cursor:"pointer"}}>
                   <input type="checkbox" checked={partial} onChange={e=>setPartial(e.target.checked)}/>
@@ -7343,6 +7353,7 @@ const AdminPortal=({user,db,setDb,onLogout,onReload})=>{
       {modal==="import"&&(
         <StudentImportModal
           seatsLeft={isUnlimited?null:Math.max(0,studentLimit-seatsUsed)}
+          branches={branches}
           onClose={()=>setModal(null)}
           onImported={res=>{setPNote(`Imported ${count(res.imported,"student")}${res.skipped?`, skipped ${res.skipped}`:""}.`);onReload?.();}}
         />

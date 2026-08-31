@@ -2,6 +2,7 @@ import { prisma } from "../config/prisma.js";
 import { ApiError } from "../utils/ApiError.js";
 import { asyncHandler } from "../utils/asyncHandler.js";
 import { created, ok, paginate, pageMeta } from "../utils/response.js";
+import { count } from "../utils/plural.js";
 
 const MESSAGE_INCLUDE = {
   sender: { select: { id: true, name: true, role: true, avatarUrl: true } },
@@ -274,7 +275,7 @@ export const markAllRead = asyncHandler(async (req, res) => {
     data: { isRead: true, readAt: new Date() },
   });
 
-  return ok(res, { updated: result.count }, `${result.count} message(s) marked as read`);
+  return ok(res, { updated: result.count }, `${count(result.count,"message")} marked as read`);
 });
 
 /** DELETE /api/messages/:id — only the sender may delete. */

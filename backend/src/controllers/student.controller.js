@@ -29,6 +29,7 @@ import {
   sessionPeriodRange,
 } from "../services/session.service.js";
 import { emailField, phone as phoneRule } from "../validators/common.js";
+import { count } from "../utils/plural.js";
 
 const DAY_LABELS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
@@ -556,6 +557,9 @@ export const importStudents = asyncHandler(async (req, res) => {
   const { rows, partial = false, createParents = true } = req.body;
   const instituteId = req.instituteId;
 
+  // One campus for the batch, checked once rather than two thousand times.
+  await assertBranchInInstitute(req.body.branchId, instituteId);
+
   // Same explicit soft-delete filter as the single-student path — a bulk
   // import must not be blocked by seats that removed students still hold.
   const institute = await prisma.institute.findUnique({
@@ -659,7 +663,7 @@ export const importStudents = asyncHandler(async (req, res) => {
 
   if (errors.length && !partial) {
     throw ApiError.unprocessable(
-      `${errors.length} of ${rows.length} row(s) have problems — nothing was imported. Fix them, or re-send with partial=true to import the ${valid.length} valid row(s).`,
+      `${errors.length} of ${count(rows.length,"row")} have problems — nothing was imported. Fix them, or re-send with partial=true to import the ${count(valid.length,"valid row")}.`,
       errors
     );
   }
@@ -732,6 +736,7 @@ export const importStudents = asyncHandler(async (req, res) => {
           address: row.address?.trim() || null,
           instituteId,
           parentId,
+          ...(req.body.branchId && { branchId: req.body.branchId }),
         },
       });
 
@@ -762,7 +767,7 @@ export const importStudents = asyncHandler(async (req, res) => {
       students: result.madeStudents,
       errors,
     },
-    `Imported ${result.madeStudents.length} student(s)${errors.length ? `, skipped ${errors.length}` : ""}.`
+    `Imported ${count(result.madeStudents.length,"student")}${errors.length ? `, skipped ${errors.length}` : ""}.`
   );
 });
 
@@ -1433,11 +1438,11 @@ export const promoteStudents = asyncHandler(async (req, res) => {
         curriculum: curriculum.map((c) => c.name),
         enrolmentsToCreate: moves.length * curriculum.length,
       },
-      `${moves.length} student(s) would move from ${fromGrade} ${fromSection} into ${toSession}` +
+      `${count(moves.length,"student")} would move from ${fromGrade} ${fromSection} into ${toSession}` +
         (outcome === "GRADUATED"
           ? "."
           : curriculum.length
-            ? `, each taking ${curriculum.length} subject(s): ${curriculum.map((c) => c.name).join(", ")}.`
+            ? `, each taking ${count(curriculum.length,"subject")}: ${curriculum.map((c) => c.name).join(", ")}.`
             : `. ${toGrade} has no subjects yet, so they will move but take nothing until you add some.`)
     );
   }
@@ -1539,7 +1544,7 @@ export const promoteStudents = asyncHandler(async (req, res) => {
       curriculum: curriculum.map((c) => c.name),
       enrolmentsCreated: moves.length * curriculum.length,
     },
-    `${students.length} student(s) ${outcome === "RETAINED" ? `${verb} ${fromGrade} ${fromSection}` : verb} for ${toSession}.`
+    `${count(students.length,"student")} ${outcome === "RETAINED" ? `${verb} ${fromGrade} ${fromSection}` : verb} for ${toSession}.`
   );
 });
 

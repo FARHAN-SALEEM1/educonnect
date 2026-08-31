@@ -223,6 +223,59 @@ describe("teachers belong to a campus too", () => {
   });
 });
 
+describe("a roster imported into a campus", () => {
+  /**
+   * The campus is named once for the file, not once per row.
+   *
+   * A school with three buildings exports one roster at a time, and a spelled
+   * out campus column would have to agree with itself on two thousand lines to
+   * mean anything. Editing a child offered a campus and importing two thousand
+   * of them did not, which is the wrong way round.
+   */
+  it("puts every imported row on the campus the file names", async () => {
+    if (skip()) return;
+    const glb = (await as(admin).get("/api/branches")).body.data.find((b) => b.code === "GLB").id;
+
+    const res = await as(admin)
+      .post("/api/students/import")
+      .send({
+        branchId: glb,
+        rows: [
+          { name: "Imported One", grade: "Grade 3", section: "A", rollNo: `IMP-A-${stamp}` },
+          { name: "Imported Two", grade: "Grade 3", section: "A", rollNo: `IMP-B-${stamp}` },
+        ],
+      });
+
+    expect(res.status).toBe(201);
+    expect(res.body.data.imported).toBe(2);
+
+    const on = (await as(admin).get(`/api/students?branchId=${glb}&limit=100`)).body.data;
+    expect(on.map((s) => s.name)).toEqual(
+      expect.arrayContaining(["Imported One", "Imported Two"])
+    );
+
+    const counted = (await as(admin).get("/api/branches")).body.data.find((b) => b.code === "GLB");
+    expect(counted.studentCount).toBe(2);
+  });
+
+  it("refuses a campus belonging to another school", async () => {
+    if (skip()) return;
+    const glb = (await as(admin).get("/api/branches")).body.data.find((b) => b.code === "GLB").id;
+
+    const res = await as(other)
+      .post("/api/students/import")
+      .send({
+        branchId: glb,
+        rows: [{ name: "Trespass Import", grade: "Grade 3", section: "A", rollNo: `TI-${stamp}` }],
+      });
+
+    expect(res.status, "checked once for the batch, before a single row is written").toBe(400);
+
+    const none = await prismaRaw.student.findFirst({ where: { rollNo: `TI-${stamp}` } });
+    expect(none, "and nothing was imported").toBeNull();
+  });
+});
+
 describe("closing a campus", () => {
   it("keeps every child on the school's roll", async () => {
     if (skip()) return;

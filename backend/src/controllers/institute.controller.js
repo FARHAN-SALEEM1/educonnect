@@ -40,6 +40,7 @@ import {
   notificationSettings,
   sanitizeNotificationSettings,
 } from "../utils/notifications.js";
+import { count } from "../utils/plural.js";
 
 /**
  * GET /api/plans — public, powers the pricing section on the landing page.
@@ -582,7 +583,7 @@ export const updateSessionTerm = asyncHandler(async (req, res) => {
     { ...term, scoresToRefresh: stale },
     stale
       ? `"${term.name}" updated. Result cards use the new shares straight away; ` +
-        `${stale} stored subject score(s) refresh when their subject is next recalculated.`
+        `${count(stale,"stored subject score")} refresh when their subject is next recalculated.`
       : `"${term.name}" updated.`
   );
 });
@@ -610,7 +611,7 @@ export const deleteSessionTerm = asyncHandler(async (req, res) => {
     res,
     { name, marksReleased },
     marksReleased
-      ? `"${name}" removed. ${marksReleased} mark(s) kept, and now belong to no term.`
+      ? `"${name}" removed. ${count(marksReleased,"mark")} kept, and now belong to no term.`
       : `"${name}" removed.`
   );
 });
@@ -721,7 +722,7 @@ export const updateGradingSettings = asyncHandler(async (req, res) => {
     res,
     { ...policy, cachedGradesToRefresh: stale },
     `${current.name}: grading policy updated. Result cards use it straight away; ` +
-      `${stale} stored grade(s) refresh when their subject is next recalculated.`
+      `${count(stale,"stored grade")} refresh when their subject is next recalculated.`
   );
 });
 

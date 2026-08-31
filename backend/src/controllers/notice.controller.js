@@ -3,6 +3,7 @@ import { ApiError } from "../utils/ApiError.js";
 import { asyncHandler } from "../utils/asyncHandler.js";
 import { created, ok, paginate, pageMeta } from "../utils/response.js";
 import { audit } from "../utils/audit.js";
+import { count } from "../utils/plural.js";
 
 /** GET /api/notices */
 export const listNotices = asyncHandler(async (req, res) => {
@@ -134,7 +135,7 @@ export const broadcastNotice = asyncHandler(async (req, res) => {
   return created(
     res,
     { institutes: institutes.length, names: institutes.map((i) => i.name) },
-    `Broadcast published to ${institutes.length} institute(s)`
+    `Broadcast published to ${count(institutes.length,"institute")}`
   );
 });
 

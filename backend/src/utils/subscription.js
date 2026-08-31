@@ -1,4 +1,5 @@
 import { ApiError } from "./ApiError.js";
+import { count } from "./plural.js";
 
 /**
  * Subscription rules in one place.
@@ -44,7 +45,7 @@ export const assertSeatsAvailable = (institute, currentStudents, adding = 1) => 
     throw ApiError.badRequest(
       adding === 1
         ? `Student limit reached — ${currentStudents} of ${limit} seats used${custom}. Upgrade the plan or raise the limit to add more.`
-        : `This would add ${adding} students but only ${free} seat(s) remain of ${limit}${custom}.`
+        : `This would add ${adding} students but only ${count(free,"seat")} ${free===1?"remains":"remain"} of ${limit}${custom}.`
     );
   }
 };

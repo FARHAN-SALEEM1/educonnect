@@ -13,6 +13,7 @@ import { assertBranchInInstitute } from "../utils/access.js";
 import { attendanceSummary, averageScore } from "../utils/academics.js";
 import { policyFor } from "../services/grading.service.js";
 import { liveEnrolmentFilter, readSessionId, sessionFilter } from "../services/session.service.js";
+import { count } from "../utils/plural.js";
 
 /** Counts the distinct grade-sections and students a teacher is responsible for. */
 const teacherWorkload = async (teacherId) => {
@@ -422,7 +423,7 @@ export const deleteTeacher = asyncHandler(async (req, res) => {
     null,
     `${teacher.name} removed. Their subjects are now unassigned` +
       (freedPeriods
-        ? `, and ${freedPeriods} timetable period(s) now need a teacher.`
+        ? `, and ${count(freedPeriods,"timetable period")} now ${freedPeriods===1?"needs":"need"} a teacher.`
         : ".")
   );
 });

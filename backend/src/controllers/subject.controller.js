@@ -8,6 +8,7 @@ import { averageScore, predictScore } from "../utils/academics.js";
 import { policyFor } from "../services/grading.service.js";
 import { recalcSubject } from "../services/grading.service.js";
 import { findAccessibleSubject } from "../utils/access.js";
+import { count } from "../utils/plural.js";
 
 /**
  * POST /api/subjects/:id/recalculate
@@ -43,7 +44,7 @@ export const recalculateSubject = asyncHandler(async (req, res) => {
   return ok(
     res,
     { subjectId: subject.id, enrollments: updated },
-    `${subject.name}: ${updated} enrolment(s) recalculated from their marks.`
+    `${subject.name}: ${count(updated,"enrolment")} recalculated from their marks.`
   );
 });
 
@@ -201,7 +202,7 @@ export const deleteSubject = asyncHandler(async (req, res) => {
   });
   if (marks) {
     throw ApiError.conflict(
-      `${subject.name} has ${marks} recorded mark(s), so it cannot be deleted — ` +
+      `${subject.name} has ${count(marks,"recorded mark")}, so it cannot be deleted — ` +
         `that would erase them from every result card, including past years. ` +
         `A subject that is no longer taught can be left in place: next year's ` +
         `enrolments come from the new class's subjects, so it will not follow ` +
@@ -221,7 +222,7 @@ export const deleteSubject = asyncHandler(async (req, res) => {
   return ok(
     res,
     null,
-    `${subject.name} deleted along with ${subject._count.enrollments} enrollment(s)`
+    `${subject.name} deleted along with ${count(subject._count.enrollments,"enrollment")}`
   );
 });
 
@@ -324,7 +325,7 @@ export const bulkEnroll = asyncHandler(async (req, res) => {
   return created(
     res,
     { requested: rows.length, created: result.count, skipped: rows.length - result.count },
-    `${result.count} enrollment(s) created`
+    `${count(result.count,"enrollment")} created`
   );
 });
 

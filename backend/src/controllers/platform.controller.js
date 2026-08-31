@@ -4,6 +4,7 @@ import { asyncHandler } from "../utils/asyncHandler.js";
 import { ok, paginate, pageMeta } from "../utils/response.js";
 import { audit } from "../utils/audit.js";
 import { periodLabel } from "../utils/academics.js";
+import { count } from "../utils/plural.js";
 
 /**
  * Defaults for platform settings. Seeded on first read so a fresh database
@@ -45,7 +46,7 @@ export const updateSettings = asyncHandler(async (req, res) => {
 
   const allowed = new Set(DEFAULT_SETTINGS.map((s) => s.key));
   const unknown = entries.filter(([k]) => !allowed.has(k)).map(([k]) => k);
-  if (unknown.length) throw ApiError.badRequest(`Unknown setting(s): ${unknown.join(", ")}`);
+  if (unknown.length) throw ApiError.badRequest(`Unknown ${unknown.length===1?"setting":"settings"}: ${unknown.join(", ")}`);
 
   for (const [key, value] of entries) {
     const def = DEFAULT_SETTINGS.find((s) => s.key === key);
@@ -222,7 +223,7 @@ export const generateSubscriptionInvoices = asyncHandler(async (req, res) => {
   return ok(
     res,
     { period, label: periodLabel(period), created: result.count, skipped: institutes.length - result.count },
-    `${result.count} subscription invoice(s) generated for ${periodLabel(period)}`
+    `${count(result.count,"subscription invoice")} generated for ${periodLabel(period)}`
   );
 });
 
