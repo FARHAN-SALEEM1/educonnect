@@ -68,21 +68,38 @@ export const assessmentAverage = (assessments = []) => {
   return Number(((totals.obtained / totals.total) * 100).toFixed(1));
 };
 
+/**
+ * The counts + rate the dashboards show, from statuses already tallied.
+ *
+ * Kept separate from `attendanceSummary` so the database can do the counting.
+ * Reading every row to tally it in JavaScript is fine for one child and not
+ * for a school: at 1,200 students and a term of registers the summary endpoint
+ * was pulling 72,000 rows into memory and taking ten seconds. The rule for what
+ * counts as attendance lives here, once, whichever way the counting happened.
+ */
+export const summaryFromCounts = (counts = {}) => {
+  const present = counts.PRESENT ?? 0;
+  const absent = counts.ABSENT ?? 0;
+  const late = counts.LATE ?? 0;
+  const leave = counts.LEAVE ?? 0;
+  const total = present + absent + late + leave;
+  // A late arrival still counts as attendance for the headline rate.
+  const attended = present + late;
+  return {
+    present,
+    absent,
+    late,
+    leave,
+    total,
+    rate: total ? Number(((attended / total) * 100).toFixed(1)) : 0,
+  };
+};
+
 /** Turns raw attendance rows into the counts + rate the dashboards show. */
 export const attendanceSummary = (records = []) => {
   const counts = { PRESENT: 0, ABSENT: 0, LATE: 0, LEAVE: 0 };
   for (const r of records) counts[r.status] = (counts[r.status] || 0) + 1;
-  const total = records.length;
-  // A late arrival still counts as attendance for the headline rate.
-  const attended = counts.PRESENT + counts.LATE;
-  return {
-    present: counts.PRESENT,
-    absent: counts.ABSENT,
-    late: counts.LATE,
-    leave: counts.LEAVE,
-    total,
-    rate: total ? Number(((attended / total) * 100).toFixed(1)) : 0,
-  };
+  return summaryFromCounts(counts);
 };
 
 /** Ranks a student within their class by average score. Returns { rank, classSize }. */

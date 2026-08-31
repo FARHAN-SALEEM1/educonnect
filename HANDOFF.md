@@ -838,6 +838,95 @@ Dev server band karte hi wahi suite **89 second**. `import` 909s → 20s.
 
 ---
 
+## 6r. SCALE — 1,200 bachon par naapa gaya (2026-08-31)
+
+Poore project mein har cheez **chhe** students ke against dekhi gayi thi. Asli school
+mein sainkron hote hain, aur kuch queries jaan boojh kar unbounded hain — student list
+har request par poora cohort uthati hai, kyunke page-local rank bemani hota. Ye faisla
+durust hai, aur wahi sab se pehle girne wali cheez bhi ho sakti thi. To naap li gayi.
+
+`scripts/scale-probe.js` ek poora school banata hai, har screen ka waqt leta hai, aur
+school purge kar deta hai:
+
+```
+1,200 students · 40 teachers · 80 subjects
+9,600 enrolments · 28,800 marks · 72,000 attendance rows · 3,600 challans
+```
+
+### Natija — sab tez hai
+
+```
+GET /students (page 1)      272 ms      GET /dashboard/admin     317 ms
+GET /students (page 20)     200 ms      GET /teachers            244 ms
+GET /students/:id            39 ms      GET /fees (page 1)        94 ms
+GET /students/:id/report    189 ms      GET /fees/stats           30 ms
+GET /attendance/summary      48 ms      GET /subjects            105 ms
+GET /attendance (page 1)     60 ms
+```
+
+Koi endpoint 350 ms se upar nahi. **Scale wali fikr, jo "launch ke qaabil hai?" wale
+jawab mein chaar mein se ek thi, bunyadi tor par door ho gayi.**
+
+### ⚠ Aur ek jaal, jo mujhe khud phansa gaya
+
+Pehli teen runs mein ye report ho raha tha:
+
+```
+GET /attendance/summary   10,558 ms → 11,435 ms → 12,045 ms
+GET /attendance (page 1)   9,766 ms →     49 ms → 11,484 ms
+```
+
+Ek hi endpoint ek run mein 9.8 second aur agli mein 49 millisecond — **bina kisi code
+change ke**. Yehi ishara tha ke naap ghalat hai, endpoint nahi.
+
+Wajah: probe ek lakh se zyada rows likhne ke **foran baad** naapta tha. Us waqt Postgres
+ke paas us naye data ke koi statistics nahi hote, to planner andaza lagata hai — aur bura
+andaza lagata hai. Asli school ke database mein autovacuum ye statistics current rakhta
+hai.
+
+`ANALYZE` add karte hi dono endpoints **48 ms aur 60 ms** par aa gaye.
+
+> **Sabaq:** bulk insert ke foran baad naapna database ko us halat mein naapna hai jismein
+> wo asli zindagi mein kabhi nahi hota. `ANALYZE` chalayein, warna aap apni hi seeding ka
+> waqt naap rahe hain.
+
+### Ek behtari jo rahi, aur ek jo wapas li gayi
+
+**Rahi — `attendance/summary` ab database mein ginta hai.** Wo har matching row Node mein
+utha kar JS mein tally karta tha. Alag se naapa gaya, warm cache ke sath:
+
+```
+findMany + Node mein tally    868 ms    72,000 rows
+groupBy (date, status)        311 ms       120 rows
+```
+
+3× tez aur **600× kam data** wire par. Ye tab bhi durust hai jab planner ke paas statistics
+hon — is liye rakha gaya. Rate ka usool ab bhi ek hi jagah hai (`summaryFromCounts`), chahe
+ginti Node ne ki ho ya Postgres ne.
+
+**Wapas li — `listAttendance` ka `orderBy`.** Maine `student: { name: "asc" }` hata kar
+`id` kar diya tha, us 9.8-second wali reading ki bunyad par. Statistics theek hone ke baad
+naapa:
+
+```
+orderBy date, id             10 ms
+orderBy date, student.name   19 ms
+```
+
+Nau milliseconds. Us ke liye din ke register ko naam ki tarteeb mein padhna chhorna
+bemani tha, so wo sorting wapas hai.
+
+### Jo ab bhi naapa nahi gaya
+
+- **Frontend** us data ke sath — probe API ka waqt leta hai, browser ka nahi. 1,200 rows
+  ki table React mein kaisi chalti hai, wo alag sawal hai.
+- **Concurrent load** — ek waqt mein ek request naapi gayi. Subah 8 baje pandra teacher
+  ek sath register kholte hain, wo alag cheez hai.
+- **auditLog ka barhna** — 55,000+ rows par ek `count()` aaj timeout kar chuka hai
+  (section 13).
+
+---
+
 ## 6q. PRODUCT POLISH — presentation ka audit aur fixes (2026-08-31)
 
 User ne kaha: *"Mujhe 'FYP project jo achha bana hua hai' nahi chahiye — professional SaaS
@@ -4680,6 +4769,9 @@ aur wajah code nahi, **operations** hain. Us din do rukawaten hat gayin:
 Production config guard ab **sirf domain** par rukta hai — `CORS_ORIGIN` aur
 `APP_URL`, dono ko asli https URL chahiye. Sirf check ke liye dono de kar
 chalaya to guard **PASS** hua, yani peechay aur kuch chhupa nahi.
+
+**Scale ab maloom hai** — 1,200 students par har endpoint 350 ms se neeche (section 6r).
+Ye un chaar fikron mein se ek thi; wo door ho gayi.
 
 **Baqi jo launch se pehle chahiye:** off-site/managed backups (6p ka local dump
 kharab migration se bachata hai, machine kho jane se nahi), rate limiting
