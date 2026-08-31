@@ -4714,7 +4714,21 @@ const AdminTimetableTab=({teachers,onChanged})=>{
     <div style={{animation:"fadeUp .35s"}}>
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-end",gap:12,flexWrap:"wrap"}}>
         <SecHead pre="Academic" title="Timetable"/>
-        <Btn onClick={()=>setEditing({})} disabled={!activeClasses.length} style={{marginBottom:18}}>+ Add Slot</Btn>
+        {/*
+          A dead button needs to say why, where the button is.
+          The reason lived only in the empty state below, which a school with
+          slots already on the board never sees — so an admin whose classes had
+          all been archived found the one action on the screen greyed out and
+          nothing anywhere explaining it.
+        */}
+        <div style={{display:"flex",gap:12,alignItems:"center",marginBottom:18}}>
+          {!activeClasses.length&&(
+            <span style={{fontSize:12,color:T.muted,maxWidth:280,lineHeight:1.6,textAlign:"right"}}>
+              A slot belongs to a class, and this school has none yet — add one on the Classes tab.
+            </span>
+          )}
+          <Btn onClick={()=>setEditing({})} disabled={!activeClasses.length}>+ Add Slot</Btn>
+        </div>
       </div>
 
       {note&&<div style={{background:`${T.success}12`,color:T.success,borderRadius:10,padding:"11px 16px",fontSize:13,fontWeight:600,marginBottom:14,border:`1px solid ${T.success}30`}}>{note}</div>}
