@@ -42,6 +42,15 @@ services:
       - key: PORT
         value: 5001
 
+      # A date is stored at midnight UTC, so anything that formats one has to
+      # read it back in UTC or it names the day before. This service runs in
+      # Oregon; left to the host, a register saved on the 31st would tell a
+      # guardian their child was absent on the 30th, and a gradebook column
+      # would head a paper with the wrong day. The code passes timeZone: "UTC"
+      # where it formats, and this makes everything else agree.
+      - key: TZ
+        value: UTC
+
       # Paste your Neon connection string (include ?sslmode=require).
       - key: DATABASE_URL
         sync: false
