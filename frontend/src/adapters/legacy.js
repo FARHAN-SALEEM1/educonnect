@@ -305,7 +305,21 @@ export const toLegacyInsights = (insights = []) =>
  * Informational and positive findings cost nothing. Deterministic and
  * explainable — you can point at the exact insights that produced it.
  */
-export const aiScoreFrom = (insights = []) => {
+/** Has anyone marked this child in any subject yet? */
+const hasAnyMark = (s) =>
+  (s?.subjects ?? []).some((x) => x.score !== null && x.score !== undefined);
+
+/**
+ * Nothing to judge is not the same as nothing wrong.
+ *
+ * The score began at 100 and deducted for each concern, so a child with no
+ * marks at all had no concerns and scored 100 — the parent portal told a
+ * guardian their unmarked child was "Excellent" while the rank beside it
+ * honestly said "No marks recorded yet". Absence of evidence is reported as
+ * absence here too.
+ */
+export const aiScoreFrom = (insights = [], hasMarks = true) => {
+  if (!hasMarks) return null;
   const penalty = insights.reduce((sum, i) => {
     if (i.type === "STRENGTH" || i.type === "PREDICTION") return sum;
     if (i.severity >= 3) return sum + 10;
@@ -316,7 +330,9 @@ export const aiScoreFrom = (insights = []) => {
 };
 
 export const aiScoreLabel = (score) =>
-  score >= 90 ? "Excellent" : score >= 75 ? "On track" : score >= 60 ? "Needs support" : "At risk";
+  score === null || score === undefined
+    ? "No marks recorded yet"
+    : score >= 90 ? "Excellent" : score >= 75 ? "On track" : score >= 60 ? "Needs support" : "At risk";
 
 // ─────────────────────────── people ───────────────────────────
 
@@ -389,8 +405,9 @@ export const toLegacyStudentFull = (s) => ({
   timetable: toLegacyTimetable(s.timetable ?? s.timetableDays),
   timetablePeriods: toLegacyPeriods(s.timetable ?? s.timetableDays),
   aiRecs: toLegacyInsights(s.aiInsights),
-  aiScore: aiScoreFrom(s.aiInsights),
-  aiScoreLabel: aiScoreLabel(aiScoreFrom(s.aiInsights)),
+  // A subject nobody has marked cannot say anything about the child.
+  aiScore: aiScoreFrom(s.aiInsights, hasAnyMark(s)),
+  aiScoreLabel: aiScoreLabel(aiScoreFrom(s.aiInsights, hasAnyMark(s))),
   /**
    * `null` means no position, and it has to survive the mapping.
    *

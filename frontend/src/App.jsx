@@ -7825,8 +7825,8 @@ const TeacherPortal=({user,db,onLogout,onReload,onUser})=>{
                 <div style={{fontFamily:"Georgia,serif",fontSize:18,fontWeight:700,color:T.ink}}>{teacher.name}</div>
                 <div style={{fontSize:13,color:T.muted,marginTop:4}}>{teacher.subject} Teacher</div>
                 <div style={{display:"flex",justifyContent:"center",gap:8,marginTop:12}}>
-                  <Bdg label={`${teacher.classes.length} Classes`} color={T.forest} bg={`${T.forest}15`}/>
-                  <Bdg label={`${teacher.students} Students`} color={T.purple} bg={`${T.purple}15`}/>
+                  <Bdg label={count(teacher.classes.length,"Class","Classes")} color={T.forest} bg={`${T.forest}15`}/>
+                  <Bdg label={count(teacher.students,"Student")} color={T.purple} bg={`${T.purple}15`}/>
                 </div>
               </Crd>
               <Crd style={{padding:"22px"}}>
@@ -8026,7 +8026,7 @@ const ParentPortal=({user,db,onLogout,onReload})=>{
             <KPI label="Class Rank" value={student.rank?`#${student.rank}`:"—"} color={T.purple} icon="◆"
               sub={student.rank?`of ${count(student.classSize,"student")}`:"No marks recorded yet"}/>
             <KPI label="Attendance" value={`${student.att.rate??student.att.present}%`} color={T.success} icon="◷" sub={count(student.att.days,"school day")}/>
-            <KPI label="AI Score" value={`${student.aiScore}/100`} color={T.gold} icon="✦" sub={student.aiScoreLabel}/>
+            <KPI label="AI Score" value={student.aiScore==null?"—":`${student.aiScore}/100`} color={T.gold} icon="✦" sub={student.aiScoreLabel}/>
           </div>
           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 300px",gap:18}}>
             {/* Subjects */}
@@ -8322,7 +8322,7 @@ const ParentPortal=({user,db,onLogout,onReload})=>{
                       : "Once marks and attendance are recorded, predictions appear here."}
                   </p>
                   <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:14}}>
-                    {[[`${student.aiScore} / 100`,"AI Performance Score",T.gold],
+                    {[[student.aiScore==null?"—":`${student.aiScore} / 100`,"AI Performance Score",T.gold],
                       [student.aiScoreLabel,"Academic Standing",T.mint],
                       [student.rank?`#${student.rank} of ${student.classSize}`:"—","Current Class Rank","#fff"]].map(([v,l,c])=>(
                       <div key={l} style={{padding:"18px",background:"rgba(255,255,255,.07)",borderRadius:14,border:"1px solid rgba(255,255,255,.08)"}}>
