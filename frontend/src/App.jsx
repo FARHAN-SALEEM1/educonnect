@@ -56,12 +56,25 @@ const css=`
     [style*="repeat(4,1fr)"],[style*="repeat(4, 1fr)"]{grid-template-columns:repeat(2,1fr)!important;}
     [style*="repeat(6,1fr)"],[style*="repeat(6, 1fr)"]{grid-template-columns:repeat(3,1fr)!important;}
 
-    /* Content + fixed side rail (dashboards, fees, messages) stacks. */
-    [style*="280px 1fr"],[style*="1fr 280px"],
-    [style*="300px 1fr"],[style*="1fr 300px"],
-    [style*="320px 1fr"],[style*="1fr 320px"],
-    [style*="340px 1fr"],[style*="1fr 340px"],
-    [style*="360px 1fr"],[style*="1fr 360px"],
+    /* Content + fixed side rail (dashboards, fees, messages) stacks.
+
+       Enumerated rather than picked, because an attribute selector cannot
+       match a number range and a hand-listed set silently misses whatever
+       width nobody thought of. It missed two: the student detail panel is
+       "1fr 370px" and three layouts use 290px, so on a laptop the panel was
+       laid out past the right edge of a page that does not scroll sideways —
+       clicking a student highlighted the row and showed nothing at all.
+
+       If you add a rail outside 240-420px, add it here. To check:
+         grep -oE "[0-9]{3}px 1fr|1fr [0-9]{3}px" src/App.jsx | sort -u
+    */
+    [style*="240px 1fr"],[style*="1fr 240px"],[style*="250px 1fr"],[style*="1fr 250px"],[style*="260px 1fr"],[style*="1fr 260px"],
+    [style*="270px 1fr"],[style*="1fr 270px"],[style*="280px 1fr"],[style*="1fr 280px"],[style*="290px 1fr"],[style*="1fr 290px"],
+    [style*="300px 1fr"],[style*="1fr 300px"],[style*="310px 1fr"],[style*="1fr 310px"],[style*="320px 1fr"],[style*="1fr 320px"],
+    [style*="330px 1fr"],[style*="1fr 330px"],[style*="340px 1fr"],[style*="1fr 340px"],[style*="350px 1fr"],[style*="1fr 350px"],
+    [style*="360px 1fr"],[style*="1fr 360px"],[style*="370px 1fr"],[style*="1fr 370px"],[style*="380px 1fr"],[style*="1fr 380px"],
+    [style*="390px 1fr"],[style*="1fr 390px"],[style*="400px 1fr"],[style*="1fr 400px"],[style*="410px 1fr"],[style*="1fr 410px"],
+    [style*="420px 1fr"],[style*="1fr 420px"],
     [style*="2fr 1fr"],[style*="1fr 2fr"]{grid-template-columns:1fr!important;}
   }
 
