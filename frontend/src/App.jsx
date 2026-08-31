@@ -61,6 +61,26 @@ const css=`
        screen and unreachable, on a page that reported no overflow because the
        card was quietly scrolling instead of the body. */
     [style*="display:grid"]>*,[style*="display: grid"]>*{min-width:0!important;}
+
+    /* Marking a register on a phone.
+
+       Present, Absent, Late and Leave plus a name and an avatar want about
+       450px of a 375px row, so Leave sat off the right edge — reachable, but
+       only by scrolling that one row sideways, on the screen a teacher opens
+       more than any other. The choices drop to their own full-width line and
+       take a quarter each, which makes them larger targets than they were on
+       the desktop row rather than smaller. */
+    /* The class and date above that register are 170px and 150px wide with
+       a gap, which is more than a 375px card has to give: the date field ran
+       12px past the screen and took its calendar button with it, so the one
+       control for marking yesterday's register could not be tapped. Both go
+       full width and stack. */
+    .ec-pickers{width:100%!important;flex-wrap:wrap!important;}
+    .ec-pickers>*{flex:1 1 100%!important;min-width:0!important;}
+
+    .ec-attrow{flex-wrap:wrap!important;}
+    .ec-attmarks{width:100%!important;gap:6px!important;}
+    .ec-attmarks>*{flex:1!important;text-align:center!important;padding-left:2px!important;padding-right:2px!important;}
   }
 
   /* 1024px laptops still overflowed with a fixed side column, so the
@@ -5508,9 +5528,9 @@ const AdminPortal=({user,db,setDb,onLogout,onReload})=>{
             )}
 
             {!loading&&invoices.length>0&&(
-              <table style={{width:"100%",borderCollapse:"collapse"}}>
-                <thead><tr>{["Student","Grade","Amount","Due","Paid On","Status","Action"].map(h=><th key={h} style={{textAlign:"left",padding:"9px 12px",fontSize:11,color:T.muted,fontWeight:700,textTransform:"uppercase",letterSpacing:".7px",borderBottom:`2px solid ${T.border}`}}>{h}</th>)}</tr></thead>
-                <tbody>{invoices.slice(0,feeShow).map(f=>{
+              <table style={{width:"100%",borderCollapse:"collapse",...scrollTable}}>
+                <thead style={scrollRows}><tr>{["Student","Grade","Amount","Due","Paid On","Status","Action"].map((h,i,arr)=><th key={h} style={{...(i===arr.length-1?stickyHead:null),textAlign:"left",padding:"9px 12px",fontSize:11,color:T.muted,fontWeight:700,textTransform:"uppercase",letterSpacing:".7px",borderBottom:`2px solid ${T.border}`}}>{h}</th>)}</tr></thead>
+                <tbody style={scrollRows}>{invoices.slice(0,feeShow).map(f=>{
                   const st=f.status.toLowerCase();
                   const c=st==="paid"?T.success:st==="overdue"?T.danger:T.warning;
                   const heads=f.items??[];
@@ -5541,7 +5561,7 @@ const AdminPortal=({user,db,setDb,onLogout,onReload})=>{
                       <td style={{padding:"12px",fontSize:13,color:T.muted}}>{f.dueDate?new Date(f.dueDate).getDate():"—"}</td>
                       <td style={{padding:"12px",fontSize:13,color:T.muted}}>{f.paidAt?new Date(f.paidAt).toLocaleDateString(undefined,{month:"short",day:"numeric"}):"—"}</td>
                       <td style={{padding:"12px"}}><Bdg label={st==="paid"?"✓ Paid":st==="overdue"?"⚠ Overdue":"⏳ Pending"} color={c} bg={`${c}15`}/></td>
-                      <td style={{padding:"12px",whiteSpace:"nowrap"}}>
+                      <td style={{padding:"12px",whiteSpace:"nowrap",...stickyCol}}>
                         {st!=="paid"&&st!=="waived"&&
                           <Btn onClick={()=>setPaying(f)} style={{padding:"5px 12px",fontSize:11,marginRight:6}}>
                             {f.paidAmount>0?"Add Payment":"Record Payment"}
@@ -5704,7 +5724,7 @@ const AdminPortal=({user,db,setDb,onLogout,onReload})=>{
         <div style={{display:"grid",gridTemplateColumns:"1fr 280px",gap:18}}>
           <Crd style={{padding:"26px"}}>
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-end",marginBottom:18,gap:14,flexWrap:"wrap"}}>
-              <div style={{display:"flex",gap:12,alignItems:"flex-end"}}>
+              <div className="ec-pickers" style={{display:"flex",gap:12,alignItems:"flex-end"}}>
                 <div style={{minWidth:180}}>
                   <Sel label="Class" options={classes.map(c=>({v:`${c.grade}|${c.section}`,l:`${c.grade} — Section ${c.section}`}))} value={cls} onChange={e=>setCls(e.target.value)}/>
                 </div>
@@ -7527,7 +7547,7 @@ const TeacherPortal=({user,db,onLogout,onReload,onUser})=>{
         <SecHead pre="Tracking" title="Take Attendance"/>
         <Crd style={{padding:"26px"}}>
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-end",marginBottom:18,gap:14,flexWrap:"wrap"}}>
-            <div style={{display:"flex",gap:12,alignItems:"flex-end"}}>
+            <div className="ec-pickers" style={{display:"flex",gap:12,alignItems:"flex-end"}}>
               <div style={{minWidth:170}}>
                 <Sel label="Class" options={myClasses.map(c=>({v:`${c.grade}|${c.section}`,l:`${c.grade} — Section ${c.section}`}))} value={cls} onChange={e=>setCls(e.target.value)}/>
               </div>
@@ -7545,13 +7565,13 @@ const TeacherPortal=({user,db,onLogout,onReload,onUser})=>{
           {!loading&&!register?.students?.length&&<div style={{fontSize:13,color:T.muted,padding:"14px 0"}}>No active students in this class.</div>}
 
           {!loading&&register?.students?.map(s=>(
-            <div key={s.id} style={{display:"flex",gap:14,alignItems:"center",padding:"12px 0",borderBottom:`1px solid ${T.border}`}}>
+            <div key={s.id} className="ec-attrow" style={{display:"flex",gap:14,alignItems:"center",padding:"12px 0",borderBottom:`1px solid ${T.border}`}}>
               <Av name={s.name} size={36} bg={`${T.forest}15`} color={T.forest} fs={12}/>
               <div style={{flex:1}}>
                 <div style={{fontSize:13,fontWeight:600,color:T.ink}}>{s.name}</div>
                 <div style={{fontSize:11,color:T.muted}}>{s.rollNo}</div>
               </div>
-              <div style={{display:"flex",gap:8}}>
+              <div className="ec-attmarks" style={{display:"flex",gap:8}}>
                 {[["Present","PRESENT",T.success],["Absent","ABSENT",T.danger],["Late","LATE",T.warning],["Leave","LEAVE",T.muted]].map(([l,sv,c])=>(
                   <span key={sv} onClick={()=>setMarks(m=>({...m,[s.id]:sv}))}
                     style={{padding:"7px 14px",borderRadius:99,fontSize:12,fontWeight:600,cursor:"pointer",background:marks[s.id]===sv?c:"transparent",color:marks[s.id]===sv?"#fff":c,border:`1.5px solid ${c}`,transition:"all .15s"}}>{l}</span>
