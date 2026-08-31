@@ -262,14 +262,31 @@ describe("a production build ships no demo credentials", () => {
     expect(bundle).toContain("Forgot your password?");
   }, 180_000);
 
-  it("puts the demo panel back only when explicitly asked at build time", async () => {
+  /**
+   * A demo build is a different artifact, and it is allowed to carry the demo
+   * logins — one-click role entry is what a demo is. What it must not carry is
+   * the developer's sign-in list, which used to sit on the login screen and
+   * read like a list of accounts to try rather than a product.
+   *
+   * That distinction is why this deployment needs its own throwaway database:
+   * the credentials in a demo bundle unlock demo data and nothing else. The
+   * server enforces the other half — production refuses to start if it finds
+   * these accounts (src/config/demo-guard.js).
+   */
+  it("carries the demo role picker only when explicitly asked at build time", async () => {
     const bundle = await buildBundle({ VITE_ENABLE_DEMO: "true" });
-    expect(bundle).toContain("Quick Login");
+    expect(bundle).toContain("See EduConnect in action");
     expect(bundle).toContain("super123");
 
-    // …and leaves again when the flag is dropped, so the default is safe.
+    // The login screen's credential list is a developer convenience, gated on
+    // DEV rather than the demo flag — a demo deployment must not show it.
+    expect(bundle).not.toContain("Developer sign-in");
+
+    // …and the logins leave entirely when the flag is dropped, so the default
+    // artifact is the safe one.
     const plain = await buildBundle();
     expect(plain).not.toContain("super123");
+    expect(plain).not.toContain("See EduConnect in action");
   }, 240_000);
 
   it("keeps the source gated rather than relying on minification alone", () => {

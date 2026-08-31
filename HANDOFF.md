@@ -185,7 +185,7 @@ educonnect direct app/
 
 ## 2. CURRENT PROJECT STATE
 
-- **Tests:** **875/875 pass, 55 test files** (2026-08-30)
+- **Tests:** **875/875 pass, 55 test files** (2026-08-31)
 - **Build:** clean, `519.02 kB` (gzip 135.39 kB)
 - **Git:** **2026-08-30 ko pehli dafa commit aur push hua** — branch `deploy-prep`,
   159 files, +35,092 / −1,066. Us se pehle repo mein sirf ek commit tha aur poori
@@ -835,6 +835,114 @@ Dev server band karte hi wahi suite **89 second**. `import` 909s → 20s.
 - **phir** column NOT NULL aur `@@unique([studentId, subjectId, academicSessionId])` —
   yehi RETAINED student ko wahi subject dobara lene dega
 - frontend par session picker (card par pichla saal chunna)
+
+---
+
+## 6q. PRODUCT POLISH — presentation ka audit aur fixes (2026-08-31)
+
+User ne kaha: *"Mujhe 'FYP project jo achha bana hua hai' nahi chahiye — professional SaaS
+product wali presentation chahiye."* Aur pehle audit maanga, phir fixes.
+
+### Audit ka natija — zyadatar cheezein pehle se theek thin
+
+Ye likhna zaroori hai, kyunke agla banda yehi farz karega ke sab kuch kharab tha:
+
+| poocha gaya | mila |
+|---|---|
+| FYP / student-project wording | **sirf ek jagah** (neeche). `FYP`, `Prototype`, `Testing only`, `Not for production` — kahin nahi |
+| demo credentials UI mein | **production bundle mein 0 hits.** `DEMO_LOGINS_ENABLED` gate pehle se tha aur `seedguard.test.js` usay pin karta tha |
+| developer/debug wording | koi nahi. UI text mein `TODO`/`FIXME` nahi, raw `e.message \|\|` fallback **0**, koi "Something went wrong" nahi |
+| empty/error states | pehle se context-aware: *"Nothing outstanding — every invoice is settled"*, *"No invoices have been issued yet"* |
+| landing page statistics | **jhooti nahi.** `4 Portals`, `11 Modules` asli ginti hain, PKR figure asli plans se compute hota hai (`Math.min(...PLANS.map(p=>p.price))`). Koi "10,000+ schools" nahi |
+| dashboard consistency | shared theme (12 tokens) aur shared components (`Btn`, `Inp`, `Sel`, `Crd`, `Modal`, `KPI`, `Bdg`, `Bar`) |
+| login page | pehle se professional — *"Welcome back / Sign in to EduConnect"*, forgot password, proper validation |
+
+Landing page ki imandari ka kaam pehle ho chuka tha (section 6i).
+
+### Jo waqai mila
+
+**1 · Footer mein ek line, aur wo production bundle mein jati thi.**
+
+```
+Final-year project · not a commercial service
+```
+
+Ye `DEMO_LOGINS_ENABLED` gate se **bahar** thi. Pehla grep ise miss kar gaya kyunke wo
+hyphenated hai (`Final-year`, na ke `final year`) — sabak: aise sweep mein hyphen aur
+case dono ki soorat lein.
+
+Footer ab: product name, dynamic copyright (`new Date().getFullYear()` — hardcoded 2026
+stale ho jata), *"Built in Pakistan for Pakistani schools"*, aur `Features · Pricing` —
+ye do isi liye ke wo **waqai maujood** hain (`#ec-features`, `#ec-pricing`). Fake
+Privacy/Terms/Support links nahi banaye, kyunke un ke peechay kuch nahi.
+
+**2 · Pluralisation — 15 jagah "1 students" / "1 classes".**
+
+Ye wo cheez hai jo software ko adhoora dikhati hai, aur do live dekhi gayin:
+
+```
+Mr. Ali · 1 students                      (admin ki teacher list)
+You teach Mathematics across 1 classes    (teacher dashboard)
+Best month  Aug (1 days)                  (parent attendance)
+ATTENDANCE  100% · 1 school days          (parent dashboard)
+```
+
+Ek helper (`count(n, singular, plural)`) aur 15 sites. Plan capacities chhori gayin —
+"Up to 50 students" mein ginti kabhi 1 nahi hoti.
+
+> Aakhri do sites **grep se nahi, UI dekhne se** mileen. Isi liye visual pass zaroori
+> hai: `"1 school days"` un patterns mein nahi aata jo `.length}` dhoondte hain.
+
+**3 · Demo experience — credentials ki list se product demo tak.**
+
+Pehle: ek modal jo chaar rows mein **email aur password** dikhata tha. Wo developer
+shortcut hai jisne modal pehen liya ho.
+
+Ab: role picker. Visitor wo **nazar** chunta hai jo dekhni hai, login nahi.
+
+```
+See EduConnect in action
+
+School Admin     Run a school day to day — enrol students, set fees, mark registers…
+Teacher          Take attendance, enter marks and watch a class average move as you do
+Parent           See a child's result card, attendance and fee challans…
+Platform Owner   The view for running EduConnect itself — every school, its plan…
+
+This is sample data shared by everyone trying the demo… Nothing here belongs to a real school.
+```
+
+Credentials code mein hain (wahi sign-in karte hain) magar **screen par nahi**. Order bhi
+badla: school-facing roles pehle, platform owner aakhir mein.
+
+Sath hi:
+- Shared `Shell` mein ek demo banner — demo deployment par har session demo hai, to ye
+  ek dafa, halke se, har jagah keh deta hai
+- Login page ka credential panel ab `import.meta.env.DEV` par hai, `DEMO_LOGINS_ENABLED`
+  par nahi — **demo deployment par bhi nahi dikhega**. Sign-in screen par addresses ki
+  list us tassur ka ulat hai jo demo dena chahta hai
+- Seed wala error hint (`npm run db:seed`) sirf DEV mein — visitor npm nahi chala sakta
+
+### ⚠ Demo ko public karna ek deployment ka faisla hai, code ka nahi
+
+`VITE_ENABLE_DEMO=true` ke sath bundle mein demo logins **aate hain** — one-click role
+entry ka matlab hi yehi hai. Us par ye lazim hai:
+
+> **Public demo apne alag database ke sath alag deployment ho.**
+
+Wajah do hain, aur dono theek hain: demo dekhne wala kisi asli school ke data ke qareeb
+na jaye, aur production khud aise database ke sath **start hi nahi hoti** jismein demo
+accounts hon (`src/config/demo-guard.js`). Ye guard jaan boojh kar rakha gaya hai — user
+ne sarahatan kaha usay na hataya jaye.
+
+`render.yaml` `VITE_ENABLE_DEMO` set nahi karta, is liye pilot deployment saaf hai.
+
+### Ek test badla — jaan boojh kar
+
+`seedguard.test.js` ka *"puts the demo panel back"* ab *"carries the demo role picker"*
+hai. Wo `VITE_ENABLE_DEMO=true` build mein `"Quick Login"` hone ka test karta tha; ab wo
+panel DEV-only hai, to us jagah test karta hai ke **role picker maujood ho aur developer
+sign-in ghair-maujood**. Default build ke assertions waise ke waise — us mein na
+`super123` hai na demo UI.
 
 ---
 
@@ -4091,6 +4199,13 @@ isolation mein wo 0.3s ka hai. Wo tab hua jab **ngrok aur frontend dev server do
 
 > **Full suite chalane se pehle ngrok aur frontend band kar dein.** Ye empirically
 > sabit hai, aur suite mein koi guard nahi jo isay pakde.
+>
+> **2026-08-31 — isi ka ek asli natija.** Dev servers chalte hue ek run 415s le gayi aur
+> `tokenreuse.test.js` ka ek test **20s par timeout** ho gaya. Wo test
+> `auditLog.count()` karta hai, aur wo table 49,000+ rows ka ho chuka hai. Servers band
+> kar ke wahi suite **130s** mein 875/875 green, aur akeli file 13/13. Yani ye code ki
+> flakiness nahi — contention hai, aur agar audit log aur barha to ye test pehla shikar
+> hoga.
 
 ### 2026-08-30: raftaar ka asal sabab mil gaya — code nahi tha
 

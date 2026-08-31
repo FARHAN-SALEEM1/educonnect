@@ -154,6 +154,18 @@ const greeting = (d = new Date()) => {
 };
 const pct = (a,b) => Math.round(a/b*100);
 /**
+ * "1 student", "3 students" — a count and its noun, agreeing.
+ *
+ * Scattered `{n} students` was correct for every number except one, and one is
+ * common: a teacher with a single class, a class with a single child, a school
+ * that has issued its first invoice. "1 students" on a dashboard reads as
+ * unfinished software, and it was showing in a dozen places.
+ *
+ * Pass `plural` where English does not simply add an s.
+ */
+const count = (n, singular, plural = `${singular}s`) =>
+  `${n} ${n === 1 ? singular : plural}`;
+/**
  * Today as "YYYY-MM-DD" in the browser's own timezone.
  *
  * `toISOString().slice(0,10)` is the obvious version and it is wrong here: it
@@ -1042,7 +1054,20 @@ const Shell=({nav,tab,setTab,user,inst,collapsed,setCollapsed,onLogout,children}
       <style>{css}</style>
       <Sidebar nav={nav} tab={tab} setTab={setTab} user={user} inst={inst}
         collapsed={isCollapsed} setCollapsed={narrow?()=>{}:setCollapsed} onLogout={onLogout} lockCollapsed={narrow}/>
-      <main style={{flex:1,padding:"28px 34px",overflowY:"auto",minWidth:0,maxWidth:"100%",animation:"fadeUp .38s ease"}}>{children}</main>
+      <main style={{flex:1,overflowY:"auto",minWidth:0,maxWidth:"100%",animation:"fadeUp .38s ease"}}>
+        {/* On a demo deployment every session is a demo session, so this says so
+            once, quietly, everywhere. Someone clicking through four portals
+            should never have to wonder whether the marks in front of them
+            belong to a real child. */}
+        {DEMO_LOGINS_ENABLED&&(
+          <div style={{background:`${T.gold}18`,borderBottom:`1px solid ${T.gold}40`,color:T.ink,
+            padding:"9px 34px",fontSize:12.5,display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
+            <span style={{fontWeight:700,color:T.gold}}>Demo</span>
+            <span style={{color:T.muted}}>Sample data, shared with everyone trying EduConnect. Nothing here belongs to a real school.</span>
+          </div>
+        )}
+        <div style={{padding:"28px 34px"}}>{children}</div>
+      </main>
     </div>
   );
 };
@@ -1069,11 +1094,18 @@ const Shell=({nav,tab,setTab,user,inst,collapsed,setCollapsed,onLogout,children}
 const DEMO_LOGINS_ENABLED =
   import.meta.env.DEV || import.meta.env.VITE_ENABLE_DEMO === "true";
 
+/**
+ * The four views, described by what they show rather than who they log in as.
+ *
+ * The credentials stay here because they are what signs the visitor in; they
+ * are simply not put on screen. A list of emails and passwords is a developer
+ * shortcut, and it reads like one.
+ */
 const DEMO_ACCOUNTS=[
-  {role:"🔑 Super Admin",     email:"sa@educonnect.io", pass:"super123",  desc:"Full platform control — all institutes, revenue, users"},
-  {role:"🏫 Institute Admin", email:"admin@bhs.edu",    pass:"admin123",  desc:"Manage Beaconhouse — students, teachers, parents, fees"},
-  {role:"📖 Teacher",         email:"hassan@bhs.edu",   pass:"teach123",  desc:"Mr. Hassan — Mathematics classes, gradebook, attendance"},
-  {role:"👨‍👩‍👦 Parent",        email:"sara@gmail.com",   pass:"parent123", desc:"Sara Ahmed — Zain's grades, attendance, messages, fees"},
+  {role:"School Admin",  email:"admin@bhs.edu",    pass:"admin123",  desc:"Run a school day to day — enrol students, set fees, mark registers, publish results"},
+  {role:"Teacher",       email:"hassan@bhs.edu",   pass:"teach123",  desc:"Take attendance, enter marks and watch a class average move as you do"},
+  {role:"Parent",        email:"sara@gmail.com",   pass:"parent123", desc:"See a child's result card, attendance and fee challans, and message the school"},
+  {role:"Platform Owner",email:"sa@educonnect.io", pass:"super123",  desc:"The view for running EduConnect itself — every school, its plan and its billing"},
 ];
 
 const Landing=({onLogin,onSignup,onDemoLogin})=>{
@@ -1092,10 +1124,17 @@ const Landing=({onLogin,onSignup,onDemoLogin})=>{
       const user=await api.auth.login(email,pass);
       onDemoLogin(toLegacyUser(user));
     }catch(e){
+      /**
+       * The seed hint is genuinely the answer when a developer hits this, and
+       * useless to anyone else — a visitor cannot run npm. So it is shown only
+       * where it can be acted on.
+       */
       setDemoErr(
         e.status===401
-          ? "The demo accounts aren't in this database yet. Run `npm run db:seed` in the backend, then try again."
-          : e.message||"Couldn't sign in to the demo account."
+          ? import.meta.env.DEV
+            ? "The demo accounts aren't in this database yet. Run `npm run db:seed` in the backend, then try again."
+            : "This demo isn't available right now. Please try again shortly."
+          : "We couldn't open the demo. Please try again."
       );
       setDemoBusy("");
     }
@@ -1147,7 +1186,7 @@ const Landing=({onLogin,onSignup,onDemoLogin})=>{
         <p style={{fontSize:18,color:"rgba(255,255,255,.6)",maxWidth:580,margin:"0 auto 40px",lineHeight:1.8}}>Performance analytics, parent communication, attendance tracking, fee management — all in one beautifully designed platform.</p>
         <div style={{display:"flex",gap:14,justifyContent:"center",flexWrap:"wrap",marginBottom:64}}>
           <Btn onClick={onSignup} color={T.mint} text={T.forest} style={{padding:"15px 36px",fontSize:15,fontWeight:700,borderRadius:12,boxShadow:`0 8px 32px ${T.mint}44`}}>Start {TRIAL_DAYS}-Day Free Trial →</Btn>
-          {DEMO_LOGINS_ENABLED&&<Btn onClick={()=>setDemoOpen(true)} out color="rgba(255,255,255,.5)" style={{padding:"15px 36px",fontSize:15,color:"rgba(255,255,255,.8)",borderRadius:12}}>Try Demo Account</Btn>}
+          {DEMO_LOGINS_ENABLED&&<Btn onClick={()=>setDemoOpen(true)} out color="rgba(255,255,255,.5)" style={{padding:"15px 36px",fontSize:15,color:"rgba(255,255,255,.8)",borderRadius:12}}>See a Live Demo</Btn>}
         </div>
         {/* Each fact carries a line of explanation now, so they are wider than
             the bare numbers were. A narrower gap and a shared basis keeps four
@@ -1222,29 +1261,45 @@ const Landing=({onLogin,onSignup,onDemoLogin})=>{
           <div style={{width:30,height:30,borderRadius:8,background:T.forest,display:"flex",alignItems:"center",justifyContent:"center"}}><span style={{color:"#fff",fontSize:12}}>✦</span></div>
           <span style={{fontSize:14,fontWeight:800,color:"#fff",fontFamily:"Georgia,serif"}}>EduConnect</span>
         </div>
-        <span style={{fontSize:12,color:"rgba(255,255,255,.3)"}}>© 2026 EduConnect. All rights reserved. Made with ❤️ in Pakistan 🇵🇰</span>
-        {/* Was "Privacy · Terms · Support" rendered as links to pages that
-            don't exist. Shown as plain text until there is something behind them. */}
-        <span style={{fontSize:12,color:"rgba(255,255,255,.3)"}}>Final-year project · not a commercial service</span>
+        <span style={{fontSize:12,color:"rgba(255,255,255,.3)"}}>© {new Date().getFullYear()} EduConnect. Built in Pakistan for Pakistani schools.</span>
+        {/* Only what exists. "Privacy · Terms · Support" used to sit here as
+            links to pages that were never written, and before that a line
+            describing the project rather than the product. These two go
+            somewhere: they are the sections above. */}
+        <div style={{display:"flex",gap:20}}>
+          {[["Features","ec-features"],["Pricing","ec-pricing"]].map(([label,id])=>(
+            <span key={id} onClick={()=>document.getElementById(id)?.scrollIntoView({behavior:"smooth"})}
+              style={{fontSize:12,color:"rgba(255,255,255,.45)",cursor:"pointer"}}>{label}</span>
+          ))}
+        </div>
       </div>
-      {DEMO_LOGINS_ENABLED&&demoOpen&&<Modal title="Try a Demo Account" onClose={()=>{setDemoOpen(false);setDemoErr("");}} width={470}>
+      {/* A product demo, not a list of logins.
+          The credentials are still what signs you in, but showing them turned
+          this into a developer shortcut wearing a modal. A visitor picks the
+          role whose view they want; what they get told is what they will see. */}
+      {DEMO_LOGINS_ENABLED&&demoOpen&&<Modal title="See EduConnect in action" onClose={()=>{setDemoOpen(false);setDemoErr("");}} width={480}>
         <p style={{fontSize:13,color:T.muted,marginBottom:18,lineHeight:1.7}}>
-          Pick a role to sign in instantly — no typing. Each portal shows a different permission level against the same live data.
+          Choose a role to open its portal. Each one sees the same school from a
+          different side, with the permissions that role really has.
         </p>
         {DEMO_ACCOUNTS.map(({role,email,pass,desc})=>(
-          <div key={role} style={{padding:"14px",background:T.paper,borderRadius:12,marginBottom:10,border:`1px solid ${T.border}`}}>
+          <div key={role} onClick={()=>{if(!demoBusy)tryDemo(email,pass);}}
+            style={{padding:"14px",background:T.paper,borderRadius:12,marginBottom:10,border:`1px solid ${T.border}`,cursor:demoBusy?"default":"pointer"}}>
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:12}}>
               <div style={{minWidth:0}}>
                 <div style={{fontSize:13,fontWeight:700,color:T.forest,marginBottom:3}}>{role}</div>
                 <div style={{fontSize:11.5,color:T.muted,lineHeight:1.5}}>{desc}</div>
-                <div style={{fontSize:11,color:T.muted,marginTop:5,opacity:.8}}>{email} · {pass}</div>
               </div>
-              <Btn onClick={()=>tryDemo(email,pass)} style={{padding:"9px 15px",fontSize:12,flexShrink:0}} disabled={Boolean(demoBusy)}>
-                {demoBusy===email?"Signing in…":"Sign in"}
+              <Btn onClick={(ev)=>{ev.stopPropagation();tryDemo(email,pass);}} style={{padding:"9px 15px",fontSize:12,flexShrink:0}} disabled={Boolean(demoBusy)}>
+                {demoBusy===email?"Opening…":"Open"}
               </Btn>
             </div>
           </div>
         ))}
+        <p style={{fontSize:11.5,color:T.muted,marginTop:14,marginBottom:2,lineHeight:1.6}}>
+          This is sample data shared by everyone trying the demo, so it changes as
+          people use it. Nothing here belongs to a real school.
+        </p>
         {demoErr&&<div style={{background:`${T.danger}12`,color:T.danger,borderRadius:10,padding:"10px 14px",fontSize:12.5,marginTop:4,marginBottom:10,border:`1px solid ${T.danger}30`,lineHeight:1.6}}>{demoErr}</div>}
         <Btn onClick={onLogin} out color={T.muted} full style={{marginTop:6}}>Or sign in manually →</Btn>
       </Modal>}
@@ -1288,8 +1343,13 @@ const Login=({onLogin,onBack,onSignup,onForgot})=>{
           <span onClick={onForgot} style={{fontSize:13,color:T.green,cursor:"pointer",fontWeight:600}}>Forgot your password?</span>
         </div>
         <div style={{textAlign:"center",fontSize:13,color:T.muted,marginBottom:20}}>No account? <span onClick={onSignup} style={{color:T.green,cursor:"pointer",fontWeight:700}}>Register your school</span></div>
-        {DEMO_LOGINS_ENABLED&&<div style={{background:T.paper,borderRadius:14,padding:"16px",border:`1px solid ${T.border}`}}>
-          <div style={{fontSize:10,fontWeight:700,color:T.muted,marginBottom:10,textTransform:"uppercase",letterSpacing:".5px"}}>⚡ Quick Login (Demo)</div>
+        {/* A developer convenience, and only that.
+            Gated on DEV rather than DEMO_LOGINS_ENABLED so it stays off a
+            public demo deployment too: a sign-in screen listing addresses is
+            the opposite of the impression a demo is meant to make, and demo
+            visitors have the role picker on the homepage instead. */}
+        {import.meta.env.DEV&&<div style={{background:T.paper,borderRadius:14,padding:"16px",border:`1px solid ${T.border}`}}>
+          <div style={{fontSize:10,fontWeight:700,color:T.muted,marginBottom:10,textTransform:"uppercase",letterSpacing:".5px"}}>Developer sign-in</div>
           {DEMO_ACCOUNTS.map(({email:e,pass:p,role})=>(
             <div key={e} onClick={()=>{setEmail(e);setPass(p);}} style={{fontSize:12,color:T.forest,cursor:"pointer",marginBottom:5,fontWeight:600,padding:"5px 8px",borderRadius:7,transition:"background .1s"}}
               onMouseEnter={ev=>ev.currentTarget.style.background=`${T.forest}12`}
@@ -2073,7 +2133,7 @@ const StudentImportModal=({onClose,onImported,seatsLeft=null})=>{
 
               {headerProblem&&<div style={{background:`${T.danger}12`,color:T.danger,borderRadius:10,padding:"10px 14px",fontSize:13,marginBottom:12,border:`1px solid ${T.danger}30`}}>{headerProblem}</div>}
               {sheet.unknown.length>0&&<div style={{background:`${T.warning}12`,color:T.warning,borderRadius:10,padding:"10px 14px",fontSize:12,marginBottom:12,border:`1px solid ${T.warning}30`}}>Ignored column{sheet.unknown.length===1?"":"s"}: {sheet.unknown.join(", ")} — these are not imported.</div>}
-              {overSeats&&<div style={{background:`${T.warning}12`,color:T.warning,borderRadius:10,padding:"10px 14px",fontSize:12,marginBottom:12,border:`1px solid ${T.warning}30`}}>This file has {total} rows but the plan has {seatsLeft} seat{seatsLeft===1?"":"s"} left. The server will refuse the import.</div>}
+              {overSeats&&<div style={{background:`${T.warning}12`,color:T.warning,borderRadius:10,padding:"10px 14px",fontSize:12,marginBottom:12,border:`1px solid ${T.warning}30`}}>This file has {count(total,"row")} but the plan has {seatsLeft} seat{seatsLeft===1?"":"s"} left. The server will refuse the import.</div>}
 
               {/* ---- preview ---- */}
               <div style={{fontSize:12,fontWeight:700,color:T.muted,textTransform:"uppercase",letterSpacing:".6px",marginBottom:6}}>
@@ -3268,7 +3328,7 @@ const SuperAdmin=({user,db,setDb,onLogout,onReload})=>{
    */
   const removeInstitute=inst=>{
     if(!window.confirm(
-      `Delete ${inst.name}?\n\nEveryone there is signed out and cannot sign back in, and the school disappears from this list. Nothing is erased — its ${inst.students} students, ${inst.teachers} teachers and all their records are kept.\n\nYou can restore it, or erase it for good, from the Recycle Bin.`
+      `Delete ${inst.name}?\n\nEveryone there is signed out and cannot sign back in, and the school disappears from this list. Nothing is erased — its ${count(inst.students,"student")}, ${count(inst.teachers,"teacher")} and all their records are kept.\n\nYou can restore it, or erase it for good, from the Recycle Bin.`
     ))return;
     run(`del-${inst.id}`,()=>api.institutes.remove(inst.id),`${inst.name} deleted — restorable from the Recycle Bin.`);
     setSelInst(null);
@@ -3381,7 +3441,7 @@ const SuperAdmin=({user,db,setDb,onLogout,onReload})=>{
         </div>
         <Sel label="New Plan" options={planList.map(p=>({v:p.id,l:`${p.name} — Rs. ${p.price.toLocaleString()}/mo · ${p.maxStudents.toLocaleString()} students`}))} value={planId} onChange={ev=>setPlanId(ev.target.value)}/>
         {overCap&&<div style={{background:`${T.warning}12`,color:T.warning,borderRadius:10,padding:"10px 14px",fontSize:12.5,marginBottom:12,border:`1px solid ${T.warning}30`}}>
-          {inst.name} has {inst.students} students but {target.name} allows {target.maxStudents.toLocaleString()}. The API will reject this downgrade.
+          {inst.name} has {count(inst.students,"student")} but {target.name} allows {target.maxStudents.toLocaleString()}. The API will reject this downgrade.
         </div>}
         {planId!==inst.plan&&!overCap&&<div style={{background:`${T.forest}0D`,borderRadius:10,padding:"10px 14px",fontSize:12.5,marginBottom:12,color:T.muted,border:`1px solid ${T.forest}25`}}>
           Monthly billing changes from Rs. {current?.price.toLocaleString()} to <b style={{color:T.ink}}>Rs. {target?.price.toLocaleString()}</b> from the next invoice.
@@ -3625,7 +3685,7 @@ const SuperAdmin=({user,db,setDb,onLogout,onReload})=>{
       subscriptions:db.subscriptions??[],
     });
 
-    setNote(`Exported ${insts.length} institutes, ${db.users.length} users and ${db.subscriptions?.length??0} invoices.`);
+    setNote(`Exported ${count(insts.length,"institute")}, ${count(db.users.length,"user")} and ${count(db.subscriptions?.length??0,"invoice")}.`);
   };
 
   return(
@@ -3655,7 +3715,7 @@ const SuperAdmin=({user,db,setDb,onLogout,onReload})=>{
                   <div style={{width:44,height:44,borderRadius:13,background:`${pl?.color||T.forest}18`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:22,flexShrink:0}}>{i.logo}</div>
                   <div style={{flex:1}}>
                     <div style={{fontSize:14,fontWeight:600,color:T.ink}}>{i.name}</div>
-                    <div style={{fontSize:12,color:T.muted}}>{i.city} · {i.students} students · {i.teachers} teachers</div>
+                    <div style={{fontSize:12,color:T.muted}}>{i.city} · {count(i.students,"student")} · {count(i.teachers,"teacher")}</div>
                   </div>
                   <div style={{textAlign:"right"}}>
                     <Bdg label={pl?.name||i.plan} color={pl?.color||T.forest} bg={`${pl?.color||T.forest}18`}/>
@@ -4654,7 +4714,7 @@ const AdminPortal=({user,db,setDb,onLogout,onReload})=>{
         ["Student","name"],["Roll No","rollNo"],["Grade","grade"],["Section","section"],
         ["Average %","average"],["GPA","gpa"],["Attendance %","attendanceRate"],
       ]);
-      return `Academic report — ${r.roster.length} students, overall average ${r.summary.overallAverage}%.`;
+      return `Academic report — ${count(r.roster.length,"student")}, overall average ${r.summary.overallAverage}%.`;
     });
 
     const attendance=()=>run("attendance",async()=>{
@@ -4681,7 +4741,7 @@ const AdminPortal=({user,db,setDb,onLogout,onReload})=>{
         ["Student","student"],["Roll No","roll"],["Class","grade"],["Period","period"],
         ["Amount (PKR)","amount"],["Status","status"],["Due","due"],["Paid On","paidOn"],["Method","method"],
       ]);
-      return `Fee report — ${list.length} invoices across all periods.`;
+      return `Fee report — ${count(list.length,"invoice")} across all periods.`;
     });
 
     /**
@@ -6236,8 +6296,8 @@ const AdminPortal=({user,db,setDb,onLogout,onReload})=>{
               {teachers.map(t=>(
                 <div key={t.id} style={{display:"flex",gap:12,alignItems:"center",padding:"11px 0",borderBottom:`1px solid ${T.border}`}}>
                   <Av name={t.name} size={36} bg={`${T.purple}15`} color={T.purple} fs={12}/>
-                  <div style={{flex:1}}><div style={{fontSize:13,fontWeight:600,color:T.ink}}>{t.name}</div><div style={{fontSize:11,color:T.muted}}>{t.subject} · {t.students} students</div></div>
-                  <Bdg label={`${t.classes.length} classes`} color={T.purple} bg={`${T.purple}15`}/>
+                  <div style={{flex:1}}><div style={{fontSize:13,fontWeight:600,color:T.ink}}>{t.name}</div><div style={{fontSize:11,color:T.muted}}>{t.subject} · {count(t.students,"student")}</div></div>
+                  <Bdg label={count(t.classes.length,"class","classes")} color={T.purple} bg={`${T.purple}15`}/>
                 </div>
               ))}
               <Btn onClick={()=>setTab("teachers")} out color={T.purple} full style={{marginTop:14,padding:"9px",fontSize:12}}>View All Teachers →</Btn>
@@ -7012,7 +7072,7 @@ const TeacherPortal=({user,db,onLogout,onReload,onUser})=>{
         </div>
 
         <div style={{fontSize:11,fontWeight:700,color:T.muted,marginBottom:6,textTransform:"uppercase",letterSpacing:".6px"}}>
-          Marks {roster.length>0&&`(${roster.length} students)`}
+          Marks {roster.length>0&&`(${count(roster.length,"student")})`}
         </div>
         <div style={{maxHeight:220,overflowY:"auto",border:`1.5px solid ${T.border}`,borderRadius:10,padding:"6px",marginBottom:14,background:T.paper}}>
           {loadingRoster&&<div style={{padding:"12px",fontSize:13,color:T.muted}}>Loading class list…</div>}
@@ -7306,7 +7366,7 @@ const TeacherPortal=({user,db,onLogout,onReload,onUser})=>{
           <div style={{marginBottom:22}}>
             <div style={{fontSize:10,fontWeight:700,color:T.muted,letterSpacing:"1.8px",textTransform:"uppercase",marginBottom:5}}>Welcome back</div>
             <h1 style={{fontFamily:"Georgia,serif",fontSize:32,fontWeight:800,color:T.ink}}>{greeting()}, <em style={{color:T.green,fontStyle:"italic"}}>{teacher.name}!</em></h1>
-            <p style={{color:T.muted,fontSize:14,marginTop:5}}>You teach {teacher.subject} across {teacher.classes.length} classes.</p>
+            <p style={{color:T.muted,fontSize:14,marginTop:5}}>You teach {teacher.subject} across {count(teacher.classes.length,"class","classes")}.</p>
           </div>
           <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:14,marginBottom:22}}>
             <KPI label="My Classes" value={teacher.classes.length} color={T.forest} icon="▦" sub={teacher.subject}/>
@@ -7805,8 +7865,8 @@ const ParentPortal=({user,db,onLogout,onReload})=>{
                 result card applies. Showing "#0 of 5" was the old bug, and
                 showing "#4 of 5" beside a blank card was the older one. */}
             <KPI label="Class Rank" value={student.rank?`#${student.rank}`:"—"} color={T.purple} icon="◆"
-              sub={student.rank?`of ${student.classSize} students`:"No marks recorded yet"}/>
-            <KPI label="Attendance" value={`${student.att.rate??student.att.present}%`} color={T.success} icon="◷" sub={`${student.att.days} school days`}/>
+              sub={student.rank?`of ${count(student.classSize,"student")}`:"No marks recorded yet"}/>
+            <KPI label="Attendance" value={`${student.att.rate??student.att.present}%`} color={T.success} icon="◷" sub={count(student.att.days,"school day")}/>
             <KPI label="AI Score" value={`${student.aiScore}/100`} color={T.gold} icon="✦" sub={student.aiScoreLabel}/>
           </div>
           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 300px",gap:18}}>
@@ -7918,7 +7978,7 @@ const ParentPortal=({user,db,onLogout,onReload})=>{
                       {student.monthlyAtt.map((m,i)=>(
                         <div key={`${m.year}-${m.label}`} style={{flex:1,display:"flex",flexDirection:"column",alignItems:"center",gap:3}}>
                           <div style={{fontSize:8,color:T.muted,fontWeight:600}}>{m.present}</div>
-                          <div title={`${m.label} ${m.year}: ${m.present} of ${m.total} days`}
+                          <div title={`${m.label} ${m.year}: ${m.present} of ${count(m.total,"day")}`}
                             style={{width:"100%",borderRadius:"3px 3px 0 0",background:i===lastIdx?G(T.mint,T.forest,"180deg"):T.border,height:`${(m.present/peak)*65}px`,transition:`height 1s ${i*55}ms`}}/>
                           <span style={{fontSize:8,color:T.muted}}>{m.label}</span>
                         </div>
@@ -7998,7 +8058,7 @@ const ParentPortal=({user,db,onLogout,onReload})=>{
                   const punctual=c.total?Math.round((c.present/c.total)*100):0;
                   return[
                     ["Days recorded",String(c.total)],
-                    ["Best month",best&&best.present?`${best.label} (${best.present} days)`:"—"],
+                    ["Best month",best&&best.present?`${best.label} (${count(best.present,"day")})`:"—"],
                     ["On-time rate",`${punctual}%`],
                     ["Leave days",String(c.leave)],
                   ].map(([l,v])=>(
