@@ -27,17 +27,25 @@ export const shortDate = (value) => {
 /** "2026-03-12T…" → "2026-03-12" */
 export const isoDate = (value) => (value ? new Date(value).toISOString().slice(0, 10) : null);
 
-/** Relative time the message list shows: "2h ago", "3d ago". */
-export const timeAgo = (value) => {
+/**
+ * Relative time the message list shows: "2h ago", "3d ago".
+ *
+ * `tr` is how the parent portal gets these in Urdu. It defaults to identity,
+ * so every other caller — and this adapter itself — keeps returning English
+ * without knowing a translation exists. Formatting once and translating the
+ * result would mean parsing "12d ago" back apart; the units are named here
+ * instead, and whoever knows the language supplies the words.
+ */
+export const timeAgo = (value, tr = (s) => s) => {
   if (!value) return "";
   const seconds = Math.floor((Date.now() - new Date(value).getTime()) / 1000);
-  if (seconds < 60) return "just now";
+  if (seconds < 60) return tr("just now");
   const minutes = Math.floor(seconds / 60);
-  if (minutes < 60) return `${minutes}m ago`;
+  if (minutes < 60) return tr("{n}m ago").replace("{n}", minutes);
   const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `${hours}h ago`;
+  if (hours < 24) return tr("{n}h ago").replace("{n}", hours);
   const days = Math.floor(hours / 24);
-  if (days < 30) return `${days}d ago`;
+  if (days < 30) return tr("{n}d ago").replace("{n}", days);
   return shortDate(value);
 };
 
@@ -476,6 +484,8 @@ export const toLegacyMessage = (m, currentUserId) => ({
   subj: m.subject,
   body: m.body,
   time: timeAgo(m.createdAt),
+  // Kept raw as well: the parent portal re-formats it in Urdu.
+  at: m.createdAt,
   // "unread" only means anything for messages addressed to you.
   unread: m.recipient?.id === currentUserId ? !m.isRead : false,
   instId: m.instituteId,

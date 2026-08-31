@@ -190,6 +190,41 @@ const UR = {
   "View AI Insights →": "اے آئی تجزیہ دیکھیں ←",
   Predicted: "متوقع",
   "vs. Target": "ہدف کے مقابلے میں",
+
+  // ── the words a badge, a count and a standing are made of ─────────────
+  //
+  // The week strip printed its raw status, so a guardian reading an Urdu
+  // page found "present" sitting under Wednesday. The standings come from
+  // the adapter, which returns English, and the one place that forgot to
+  // pass them through `t` was the largest card on the screen.
+  present: "حاضر",
+  absent: "غیر حاضر",
+  late: "تاخیر",
+  leave: "رخصت",
+  Excellent: "بہترین",
+  "On track": "درست سمت میں",
+  "Needs support": "مدد درکار",
+  "At risk": "خطرے میں",
+
+  // Counted nouns. Urdu does not inflect either of these for number, so
+  // both forms carry the same word and only the numeral changes.
+  "{n} day": "{n} دن",
+  "{n} days": "{n} دن",
+  "{n} subject": "{n} مضمون",
+  "{n} subjects": "{n} مضامین",
+
+  // Sentences with something styled in the middle of them. `{v}` marks
+  // where that value goes, and Urdu puts it somewhere else.
+  "{n} is projected to average {v} across their subjects":
+    "{n} کے مضامین میں اوسط {v} رہنے کی پیش گوئی ہے",
+  "Based on {v} and {d} of attendance.": "{v} اور {d} کی حاضری کی بنیاد پر۔",
+  "#{n} of {v}": "{v} میں سے #{n}",
+
+  // How long ago a message arrived.
+  "just now": "ابھی ابھی",
+  "{n}m ago": "{n} منٹ پہلے",
+  "{n}h ago": "{n} گھنٹے پہلے",
+  "{n}d ago": "{n} دن پہلے",
 };
 
 const KEY = "ec-lang";
@@ -236,6 +271,17 @@ export const t = (s) => (lang === "ur" && UR[s] !== undefined ? UR[s] : s);
 /** A phrase with a number in it, placed where the language puts it. */
 export const tn = (key, n) => t(key).split("{n}").join(n);
 
+/**
+ * A counted noun, with the noun translated too.
+ *
+ * `count` in App.jsx builds "3 days" and is used on every screen in the
+ * product, so it cannot route through `t` — the language is a module-level
+ * choice, and an admin signing in after a parent had picked Urdu would find
+ * their own tables counting in it. This is the parent portal's version, and
+ * like `t` it is only ever called from there.
+ */
+export const tc = (n, singular, plural = `${singular}s`) =>
+  tn(n === 1 ? `{n} ${singular}` : `{n} ${plural}`, n);
 /** Every key that has an Urdu translation — used by the coverage check. */
 export const urduKeys = () => Object.keys(UR);
 

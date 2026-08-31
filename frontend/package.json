@@ -8,7 +8,8 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "check:csv": "node scripts/check-csv.mjs"
+    "check:csv": "node scripts/check-csv.mjs",
+    "check:urdu": "node scripts/check-urdu.mjs"
   },
   "dependencies": {
     "react": "^18.3.1",

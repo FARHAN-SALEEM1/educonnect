@@ -1,9 +1,9 @@
 import { Fragment, useState, useEffect, useMemo, useReducer } from "react";
 import api from "./api/endpoints.js";
-import { t, tn, useLang, getLang, setLang } from "./i18n.js";
+import { t, tc, tn, useLang, getLang, setLang } from "./i18n.js";
 import { tokens, restoreSession, setSessionExpiredHandler } from "./api/client.js";
 import { useDb, fetchAll } from "./hooks/useDb.js";
-import { toLegacyUser } from "./adapters/legacy.js";
+import { timeAgo, toLegacyUser } from "./adapters/legacy.js";
 import { downloadCsv, downloadJson, stamped } from "./utils/download.js";
 import { readImportSheet, IMPORT_COLUMNS, importTemplateRows } from "./utils/csv.js";
 import {
@@ -48,6 +48,19 @@ const css=`
   @media (max-width:768px){
     table{display:block;overflow-x:auto;white-space:nowrap;max-width:100%;}
     thead,tbody{width:max-content;min-width:100%;}
+
+    /* And the box around the table has to be willing to shrink, or the
+       scroll region never gets to scroll.
+
+       A grid or flex child sizes itself with min-width:auto, which is its
+       content's width. A card holding a seven-column table therefore refused
+       to go below ~815px on a 375px screen, and max-width:100% above resolved
+       against that 815px rather than the phone. The table looked fine, because
+       the damage lands on whatever sits beside it: the Fees list's own
+       'Show 50 more' button sat at x=377-614, entirely off the right of the
+       screen and unreachable, on a page that reported no overflow because the
+       card was quietly scrolling instead of the body. */
+    [style*="display:grid"]>*,[style*="display: grid"]>*{min-width:0!important;}
   }
 
   /* 1024px laptops still overflowed with a fixed side column, so the
@@ -254,6 +267,24 @@ const Av=({name,size=36,bg=T.forest,color="#fff",fs=13,style={}})=>(
 const Bdg=({label,color,bg,style={}})=>(
   <span style={{display:"inline-flex",alignItems:"center",padding:"2px 10px",borderRadius:99,fontSize:11,fontWeight:600,color,background:bg,whiteSpace:"nowrap",...style}}>{label}</span>
 );
+/**
+ * The foot of a windowed list.
+ *
+ * Four screens hold their whole table in memory and draw a slice of it, so
+ * this is the one place that says which slice, and the one place that can
+ * widen it. `total` is the filtered total, not the roll: after a search it
+ * counts what matched.
+ */
+const ShowMore=({shown,total,page,onMore,onAll})=>{
+  if(total<=shown)return null;
+  return(
+    <div style={{display:"flex",gap:12,alignItems:"center",justifyContent:"center",flexWrap:"wrap",padding:"16px 6px 2px",borderTop:`1px solid ${T.border}`}}>
+      <span style={{fontSize:12,color:T.muted}}>Showing {shown.toLocaleString()} of {total.toLocaleString()}</span>
+      <Btn out color={T.forest} onClick={onMore}>Show {Math.min(page,total-shown)} more</Btn>
+      {total-shown>page&&<Btn out color={T.muted} onClick={onAll}>Show all</Btn>}
+    </div>
+  );
+};
 const Crd=({children,style={},onClick,className})=>(
   <div className={className} onClick={onClick} style={{background:T.card,borderRadius:18,border:`1px solid ${T.border}`,boxShadow:"0 2px 12px rgba(15,23,42,.06)",...style,cursor:onClick?"pointer":undefined}}>{children}</div>
 );
@@ -5059,6 +5090,25 @@ const AdminPortal=({user,db,setDb,onLogout,onReload})=>{
     );
   },[students,stuQ,stuGrade,stuStatus,stuBranch]);
 
+  /**
+   * How many of those rows the table actually draws.
+   *
+   * The portal holds every student in memory on purpose — it is what makes
+   * the search above instant and complete across the whole roll rather than
+   * across one page of it. Drawing them is the part that does not scale: a
+   * 2,000-child school rendered 2,000 rows, 34,000 DOM nodes and a table
+   * 113,000px tall, and every keystroke past the filter paid 443ms of layout
+   * on a desktop — several times that on the phone an admin actually carries.
+   *
+   * So the window is on the drawing, not on the data. Filtering still reads
+   * all 2,000; the count below still says how many matched; only the rows
+   * you have not scrolled to yet are missing, and one button brings them.
+   */
+  const STU_PAGE=50;
+  const[stuShow,setStuShow]=useState(STU_PAGE);
+  // A new search starts at the top, not 500 rows into the last one.
+  useEffect(()=>{setStuShow(STU_PAGE);},[stuQ,stuGrade,stuStatus,stuBranch]);
+
   const shownTeachers=useMemo(()=>(
     tchBranch ? teachers.filter(t=>t.branch?.id===tchBranch) : teachers
   ),[teachers,tchBranch]);
@@ -5069,6 +5119,14 @@ const AdminPortal=({user,db,setDb,onLogout,onReload})=>{
     const has=v=>(v??"").toLowerCase().includes(q);
     return parents.filter(p=>has(p.name)||has(p.email)||has(p.phone)||has(p.code));
   },[parents,parQ]);
+
+  // Staff cards and guardian rows window the same way the roster does: a big
+  // school has a few hundred of each, and a teacher card is not a cheap row.
+  const TCH_PAGE=24, PAR_PAGE=50;
+  const[tchShow,setTchShow]=useState(TCH_PAGE);
+  const[parShow,setParShow]=useState(PAR_PAGE);
+  useEffect(()=>{setTchShow(TCH_PAGE);},[tchBranch]);
+  useEffect(()=>{setParShow(PAR_PAGE);},[parQ]);
   const notices=db.notices.filter(n=>n.instId===user.inst);
 
   const nav=[
@@ -5317,6 +5375,17 @@ const AdminPortal=({user,db,setDb,onLogout,onReload})=>{
     const[slip,setSlip]=useState(null);
     // Which challan has its breakdown open. One at a time; the table stays a table.
     const[openRow,setOpenRow]=useState(null);
+
+    /**
+     * The same render window the roster uses, for the same reason.
+     *
+     * A month of invoices is one per student, so a 2,000-child school draws a
+     * 2,000-row table here every time it opens Fees — and unlike the roster
+     * this one carries two buttons per row.
+     */
+    const FEE_PAGE=50;
+    const[feeShow,setFeeShow]=useState(FEE_PAGE);
+    useEffect(()=>{setFeeShow(FEE_PAGE);},[period,statusFilter]);
     const refresh=()=>setNonce(n=>n+1);
 
     useEffect(()=>{
@@ -5441,7 +5510,7 @@ const AdminPortal=({user,db,setDb,onLogout,onReload})=>{
             {!loading&&invoices.length>0&&(
               <table style={{width:"100%",borderCollapse:"collapse"}}>
                 <thead><tr>{["Student","Grade","Amount","Due","Paid On","Status","Action"].map(h=><th key={h} style={{textAlign:"left",padding:"9px 12px",fontSize:11,color:T.muted,fontWeight:700,textTransform:"uppercase",letterSpacing:".7px",borderBottom:`2px solid ${T.border}`}}>{h}</th>)}</tr></thead>
-                <tbody>{invoices.map(f=>{
+                <tbody>{invoices.slice(0,feeShow).map(f=>{
                   const st=f.status.toLowerCase();
                   const c=st==="paid"?T.success:st==="overdue"?T.danger:T.warning;
                   const heads=f.items??[];
@@ -5501,6 +5570,8 @@ const AdminPortal=({user,db,setDb,onLogout,onReload})=>{
                 })}</tbody>
               </table>
             )}
+            <ShowMore shown={feeShow} total={invoices.length} page={FEE_PAGE}
+              onMore={()=>setFeeShow(n=>n+FEE_PAGE)} onAll={()=>setFeeShow(invoices.length)}/>
           </Crd>
 
           <div style={{display:"flex",flexDirection:"column",gap:14}}>
@@ -6845,7 +6916,7 @@ const AdminPortal=({user,db,setDb,onLogout,onReload})=>{
             <Crd style={{padding:"26px"}}>
               <table style={{width:"100%",borderCollapse:"collapse",...scrollTable}}>
                 <thead style={scrollRows}><tr>{["Student","Grade","Roll No","Average","Attendance","Fees","Status",""].map((h,i,arr)=><th key={h} style={{...(i===arr.length-1?stickyHead:null),textAlign:"left",padding:"9px 12px",fontSize:11,color:T.muted,fontWeight:700,textTransform:"uppercase",letterSpacing:".7px",borderBottom:`2px solid ${T.border}`}}>{h}</th>)}</tr></thead>
-                <tbody style={scrollRows}>{shownStudents.map(s=>(
+                <tbody style={scrollRows}>{shownStudents.slice(0,stuShow).map(s=>(
                   <tr key={s.id} onClick={()=>setSelStu(selStu?.id===s.id?null:s)} style={{borderBottom:`1px solid ${T.border}`,cursor:"pointer",background:selStu?.id===s.id?`${T.forest}07`:"transparent",transition:"background .1s"}}>
                     <td style={{padding:"12px"}}><div style={{display:"flex",gap:10,alignItems:"center"}}><Av name={s.name} size={32} bg={`${T.forest}18`} color={T.forest} fs={11}/><span style={{fontSize:13,fontWeight:600,color:T.ink}}>{s.name}</span></div></td>
                     <td style={{padding:"12px",fontSize:13,color:T.muted}}>{s.grade} {s.section}</td>
@@ -6858,6 +6929,8 @@ const AdminPortal=({user,db,setDb,onLogout,onReload})=>{
                   </tr>
                 ))}</tbody>
               </table>
+              <ShowMore shown={stuShow} total={shownStudents.length} page={STU_PAGE}
+                onMore={()=>setStuShow(n=>n+STU_PAGE)} onAll={()=>setStuShow(shownStudents.length)}/>
               {!shownStudents.length&&(
                 <div style={{padding:"26px 6px",textAlign:"center",fontSize:13,color:T.muted}}>
                   {students.length
@@ -6935,7 +7008,7 @@ const AdminPortal=({user,db,setDb,onLogout,onReload})=>{
           )}
 
           <div style={{display:"grid",gridTemplateColumns:"repeat(2,1fr)",gap:16}}>
-            {shownTeachers.map(t=>(
+            {shownTeachers.slice(0,tchShow).map(t=>(
               <Crd key={t.id} style={{padding:"24px"}}>
                 <div style={{display:"flex",gap:14,alignItems:"center",marginBottom:16}}>
                   <Av name={t.name} size={50} bg={G(T.purple,T.blue)} fs={16}/>
@@ -6965,6 +7038,8 @@ const AdminPortal=({user,db,setDb,onLogout,onReload})=>{
               </Crd>
             ))}
           </div>
+          <ShowMore shown={tchShow} total={shownTeachers.length} page={TCH_PAGE}
+            onMore={()=>setTchShow(n=>n+TCH_PAGE)} onAll={()=>setTchShow(shownTeachers.length)}/>
         </div>
       )}
       {/* PARENTS */}
@@ -6986,7 +7061,7 @@ const AdminPortal=({user,db,setDb,onLogout,onReload})=>{
           <Crd style={{padding:"26px"}}>
             <table style={{width:"100%",borderCollapse:"collapse",...scrollTable}}>
               <thead style={scrollRows}><tr>{["Parent","Relation","Children","Email","Phone","Actions"].map((h,i,arr)=><th key={h} style={{...(i===arr.length-1?stickyHead:null),textAlign:"left",padding:"9px 12px",fontSize:11,color:T.muted,fontWeight:700,textTransform:"uppercase",letterSpacing:".7px",borderBottom:`2px solid ${T.border}`}}>{h}</th>)}</tr></thead>
-              <tbody style={scrollRows}>{shownParents.map(p=>{
+              <tbody style={scrollRows}>{shownParents.slice(0,parShow).map(p=>{
                 /**
                  * Every child, not the first one.
                  *
@@ -7025,6 +7100,8 @@ const AdminPortal=({user,db,setDb,onLogout,onReload})=>{
                 );
               })}</tbody>
             </table>
+            <ShowMore shown={parShow} total={shownParents.length} page={PAR_PAGE}
+              onMore={()=>setParShow(n=>n+PAR_PAGE)} onAll={()=>setParShow(shownParents.length)}/>
             {!shownParents.length&&(
               <div style={{padding:"26px 6px",textAlign:"center",fontSize:13,color:T.muted}}>
                 {parents.length?"No parents match that search.":"No parents yet."}
@@ -8448,7 +8525,7 @@ const ParentPortal=({user,db,onLogout,onReload})=>{
                   <div key={m.id} onClick={()=>{setTab("messages");setSelMsg(m);}} style={{display:"flex",gap:9,padding:"9px 0",borderBottom:i<2?`1px solid ${T.border}`:"none",cursor:"pointer"}}>
                     <Av name={m.from} size={28} bg={T.paper} color={T.forest} fs={9}/>
                     <div style={{flex:1,minWidth:0}}>
-                      <div style={{display:"flex",justifyContent:"space-between"}}><span style={{fontSize:12,fontWeight:m.unread?700:500,color:T.ink}}>{m.from}</span><span style={{fontSize:10,color:T.muted}}>{m.time}</span></div>
+                      <div style={{display:"flex",justifyContent:"space-between"}}><span style={{fontSize:12,fontWeight:m.unread?700:500,color:T.ink}}>{m.from}</span><span style={{fontSize:10,color:T.muted}}>{timeAgo(m.at,t)||m.time}</span></div>
                       <div style={{fontSize:11,color:T.muted,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{m.subj}</div>
                     </div>
                     {m.unread&&<div style={{width:6,height:6,background:T.clay,borderRadius:"50%",flexShrink:0,marginTop:4}}/>}
@@ -8526,7 +8603,7 @@ const ParentPortal=({user,db,onLogout,onReload})=>{
                           <span style={{fontFamily:"Georgia,serif",fontSize:20,fontWeight:800,color:c}}>{lbl}</span>
                         </div>
                         <div style={{fontSize:11,fontWeight:600,color:T.ink}}>{w.d}</div>
-                        <div style={{fontSize:10,color:T.muted,textTransform:"capitalize"}}>{w.s}</div>
+                        <div style={{fontSize:10,color:T.muted,textTransform:"capitalize"}}>{t(w.s)}</div>
                       </div>
                     );
                   })}
@@ -8574,7 +8651,7 @@ const ParentPortal=({user,db,onLogout,onReload})=>{
                   const punctual=c.total?Math.round((c.present/c.total)*100):0;
                   return[
                     [t("Days recorded"),String(c.total)],
-                    [t("Best month"),best&&best.present?`${best.label} (${count(best.present,"day")})`:"—"],
+                    [t("Best month"),best&&best.present?`${best.label} (${tc(best.present,"day")})`:"—"],
                     [t("On-time rate"),`${punctual}%`],
                     [t("Leave days"),String(c.leave)],
                   ].map(([l,v])=>(
@@ -8670,18 +8747,18 @@ const ParentPortal=({user,db,onLogout,onReload})=>{
                 <>
                   <h2 style={{fontFamily:"Georgia,serif",fontSize:26,fontWeight:800,color:"#fff",marginBottom:10,lineHeight:1.2,maxWidth:560}}>
                     {subs.length
-                      ?<>{student.name} is projected to average <em style={{color:T.mint}}>{projected}%</em> across their subjects</>
+                      ?(()=>{const[a,b]=tn("{n} is projected to average {v} across their subjects",student.name).split("{v}");return<>{a}<em style={{color:T.mint}}>{projected}%</em>{b}</>;})()
                       :<>{tn("No subject data recorded for {n} yet",student.name)}</>}
                   </h2>
                   <p style={{fontSize:14,color:"rgba(255,255,255,.5)",lineHeight:1.8,maxWidth:500,marginBottom:24}}>
                     {subs.length
-                      ? `Based on ${subs.length} subject${subs.length===1?"":"s"} and ${student.att.days} day${student.att.days===1?"":"s"} of attendance.`
+                      ? t("Based on {v} and {d} of attendance.").split("{v}").join(tc(subs.length,"subject")).split("{d}").join(tc(student.att.days,"day"))
                       : t("Once marks and attendance are recorded, predictions appear here.")}
                   </p>
                   <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:14}}>
                     {[[student.aiScore==null?"—":`${student.aiScore} / 100`,t("AI Performance Score"),T.gold],
-                      [student.aiScoreLabel,t("Academic Standing"),T.mint],
-                      [student.rank?`#${student.rank} of ${student.classSize}`:"—",t("Current Class Rank"),"#fff"]].map(([v,l,c])=>(
+                      [t(student.aiScoreLabel),t("Academic Standing"),T.mint],
+                      [student.rank?tn("#{n} of {v}",student.rank).split("{v}").join(student.classSize):"—",t("Current Class Rank"),"#fff"]].map(([v,l,c])=>(
                       <div key={l} style={{padding:"18px",background:"rgba(255,255,255,.07)",borderRadius:14,border:"1px solid rgba(255,255,255,.08)"}}>
                         <div style={{fontFamily:"Georgia,serif",fontSize:24,fontWeight:800,color:c,marginBottom:5}}>{v}</div>
                         <div style={{fontSize:12,color:"rgba(255,255,255,.4)"}}>{l}</div>
@@ -8798,7 +8875,7 @@ const ParentPortal=({user,db,onLogout,onReload})=>{
                       {/* In Sent the useful name is the recipient, not our own. */}
                       <Av name={box==="sent"?m.to:m.from} size={30} bg={T.paper} color={T.forest} fs={10}/>
                       <div style={{flex:1,minWidth:0}}>
-                        <div style={{display:"flex",justifyContent:"space-between"}}><span style={{fontSize:12,fontWeight:m.unread?700:500,color:T.ink}}>{box==="sent"?`To ${m.to}`:m.from}</span><span style={{fontSize:10,color:T.muted}}>{m.time}</span></div>
+                        <div style={{display:"flex",justifyContent:"space-between"}}><span style={{fontSize:12,fontWeight:m.unread?700:500,color:T.ink}}>{box==="sent"?`To ${m.to}`:m.from}</span><span style={{fontSize:10,color:T.muted}}>{timeAgo(m.at,t)||m.time}</span></div>
                         <div style={{fontSize:11,color:T.muted,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{m.subj}</div>
                       </div>
                       {m.unread&&<div style={{width:7,height:7,background:T.clay,borderRadius:"50%",flexShrink:0,marginTop:4}}/>}
@@ -8815,7 +8892,7 @@ const ParentPortal=({user,db,onLogout,onReload})=>{
                     <div style={{display:"flex",gap:10,alignItems:"center"}}>
                       <Av name={selMsg.from} size={28} bg={T.paper} color={T.forest} fs={9}/>
                       <span style={{fontSize:12,color:T.muted}}>{selMsg.from} · {selMsg.fromRole}</span>
-                      <span style={{fontSize:11,color:T.muted,marginLeft:"auto"}}>{selMsg.time}</span>
+                      <span style={{fontSize:11,color:T.muted,marginLeft:"auto"}}>{timeAgo(selMsg.at,t)||selMsg.time}</span>
                     </div>
                   </div>
                   <div style={{flex:1,padding:"26px",overflowY:"auto"}}>
