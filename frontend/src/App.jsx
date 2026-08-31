@@ -127,6 +127,12 @@ const css=`
     /* The sheet lays its own items out; the blanket rule above would stack
        five of them into a column tall enough to need scrolling. */
     .ec-more{grid-template-columns:repeat(3,minmax(0,1fr))!important;}
+
+    /* The signup plan card puts features and price side by side. On a phone
+       the price block holds 131px of a 214px row and the feature pills are
+       squeezed into what is left, one word per line. It stacks instead. */
+    .ec-planrow{flex-direction:column!important;align-items:flex-start!important;gap:10px!important;}
+    .ec-planrow>div:last-child{text-align:left!important;}
     /* Fixed-height panes (message inbox) would trap content on mobile. */
     [style*="height:520px"],[style*="height: 520px"]{height:auto!important;}
     main{padding:18px 14px!important;}
@@ -1837,7 +1843,7 @@ const Signup=({onBack,onLogin})=>{
                   <div key={pl.id} onClick={()=>setPlan(pl.id)}
                     style={{padding:"18px 20px",borderRadius:14,border:`2px solid ${plan===pl.id?pl.color:T.border}`,background:plan===pl.id?`${pl.color}09`:T.paper,cursor:"pointer",transition:"all .15s",position:"relative"}}>
                     {pl.popular&&<div style={{position:"absolute",top:12,right:12,background:`${pl.color}18`,color:pl.color,borderRadius:99,padding:"2px 10px",fontSize:11,fontWeight:700}}>Popular</div>}
-                    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                    <div className="ec-planrow" style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
                       <div>
                         <div style={{fontWeight:700,color:T.ink,fontSize:15,marginBottom:3}}>{pl.name}</div>
                         <div style={{fontSize:12,color:T.muted}}>Up to {pl.maxStudents===9999?"unlimited":pl.maxStudents.toLocaleString()} students</div>
