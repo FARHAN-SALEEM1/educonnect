@@ -144,6 +144,30 @@ ok(
   "a raw {s.average}% is back in the table"
 );
 
+console.log("\n=== plurals a person would not write ===");
+
+/**
+ * "4 row(s) were skipped" is the sound of a form that was never finished, and
+ * it was on the screen a school sees while importing its whole roll. There is
+ * a `count` helper for this — it was already used in places, which is what
+ * made the twenty-six that were not stand out.
+ *
+ * The exclusions are function calls: `map(s)`, `(s)=>`, and the like.
+ */
+const plurals = [...src.matchAll(/[A-Za-z]+\(s\)/g)]
+  .map((m) => m[0])
+  .filter((x) => !/^(map|filter|find|some|every|forEach|sort)\(s\)$/.test(x))
+  .filter((x) => !/(ing|ove|ats|sc|f)\(s\)$/.test(x));
+ok(
+  "no (s) plurals are left in what a person reads",
+  plurals.length === 0,
+  `still there: ${[...new Set(plurals)].join(", ")}`
+);
+ok(
+  "the count helper exists to make that possible",
+  /const count = \(n, singular, plural = `\$\{singular\}s`\) =>/.test(src)
+);
+
 console.log("\n=== controls a finger has to reach ===");
 
 /**

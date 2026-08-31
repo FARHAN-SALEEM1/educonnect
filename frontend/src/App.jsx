@@ -758,7 +758,7 @@ const ExamTermsCard=({onSaved})=>{
           weightage:d.weightage===""?null:Number(d.weightage),
         });
       }
-      setNote(`${changed.length} term(s) saved.`);
+      setNote(`${count(changed.length,"term")} saved.`);
       reload();
       onSaved?.();
     }catch(e){
@@ -2308,7 +2308,7 @@ const StudentImportModal=({onClose,onImported,seatsLeft=null})=>{
             </div>
           </div>
           {result.errors?.length>0&&(
-            <ErrorList items={result.errors} title={`${result.errors.length} row(s) were skipped`}/>
+            <ErrorList items={result.errors} title={`${count(result.errors.length,"row")} ${result.errors.length===1?"was":"were"} skipped`}/>
           )}
           {result.students?.length>0&&(
             <div style={{marginTop:14,maxHeight:200,overflowY:"auto",border:`1px solid ${T.border}`,borderRadius:10}}>
@@ -2413,7 +2413,7 @@ const StudentImportModal=({onClose,onImported,seatsLeft=null})=>{
                 those, so a row that looks fine here can still come back as a duplicate.
               </div>
 
-              {preflight.length>0&&<ErrorList items={preflight} title={`${preflight.length} row(s) will be rejected`}/>}
+              {preflight.length>0&&<ErrorList items={preflight} title={`${count(preflight.length,"row")} will be rejected`}/>}
               {rowErrors&&<ErrorList items={rowErrors} title="The server rejected these rows"/>}
               {serverErr&&!rowErrors&&<div style={{background:`${T.danger}12`,color:T.danger,borderRadius:10,padding:"10px 14px",fontSize:13,marginTop:12,border:`1px solid ${T.danger}30`}}>{serverErr}</div>}
               {serverErr&&rowErrors&&<div style={{fontSize:12,color:T.danger,marginTop:8}}>{serverErr}</div>}
@@ -3187,7 +3187,7 @@ const GenerateInvoicesModal=({period,label,defaultFee,onClose,onDone})=>{
           : amount!==""?{amount:Number(amount)}:{}),
         ...(grade&&{grade}),
       });
-      onDone(`${r.created} invoice(s) generated for ${r.label}${r.skipped?`, ${r.skipped} already existed`:""}.`);
+      onDone(`${count(r.created,"invoice")} generated for ${r.label}${r.skipped?`, ${r.skipped} already existed`:""}.`);
     }catch(e){
       setErr(e.errors?.[0]?.message||e.message||"Could not generate invoices.");
       setBusy(false);
@@ -3447,7 +3447,7 @@ const ReportCardModal=({studentId,onClose})=>{
                   {" "}so the marked terms carry the whole figure. An unsat term is not a zero.</>
                 )}
                 {weighting.marksOutsideTerms>0&&(
-                  <><br/>{weighting.marksOutsideTerms} mark(s) belong to no term and carry no weight,
+                  <><br/>{count(weighting.marksOutsideTerms,"mark")} {weighting.marksOutsideTerms===1?"belongs":"belong"} to no term and {weighting.marksOutsideTerms===1?"carries":"carry"} no weight,
                   {" "}so they are not in this figure.</>
                 )}
               </div>
@@ -3466,7 +3466,7 @@ const ReportCardModal=({studentId,onClose})=>{
                     {data.result.passed?"PASS":"FAIL"}
                   </div>
                   <div style={{fontSize:11.5,color:T.muted,marginTop:2}}>
-                    {data.result.subjectsPassed} of {data.result.subjectsJudged} subject(s) cleared
+                    {data.result.subjectsPassed} of {count(data.result.subjectsJudged,"subject")} cleared
                     {" · pass mark "}{data.result.passingPercentage}%
                   </div>
                 </div>
@@ -3474,7 +3474,7 @@ const ReportCardModal=({studentId,onClose})=>{
                   <div style={{fontSize:12,color:T.muted,textAlign:"right"}}>
                     {data.result.passed
                       ?"Eligible for promotion"
-                      :`${data.result.subjectsFailed} subject(s) below the pass mark`}
+                      :`${count(data.result.subjectsFailed,"subject")} below the pass mark`}
                   </div>
                 )}
               </div>
@@ -3761,7 +3761,7 @@ const SuperAdmin=({user,db,setDb,onLogout,onReload})=>{
           ...(f.scope==="pick"&&{instituteIds:picked}),
         });
         setModal(null);
-        setNote(`Broadcast published to ${r.institutes} institute(s).`);
+        setNote(`Broadcast published to ${count(r.institutes,"institute")}.`);
         onReload?.();
       }catch(x){
         setE2(x.errors?.[0]?.message||x.message||"Could not send the broadcast.");
@@ -4132,7 +4132,7 @@ const SuperAdmin=({user,db,setDb,onLogout,onReload})=>{
           <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:14,marginBottom:22}}>
             <KPI label="Monthly Recurring" value={`Rs. ${mrr.toLocaleString()}`} color={T.forest} icon="◑" sub={`${insts.filter(i=>i.status==="active").length} active subscriptions`}/>
             <KPI label="Annual Run Rate" value={`Rs. ${((kpis.arr??mrr*12)/1000).toFixed(0)}K`} color={T.blue} icon="◈" sub="Projected ARR"/>
-            <KPI label="Outstanding" value={`Rs. ${(subSummary.PENDING?.amount??0).toLocaleString()}`} color={T.warning} icon="⏳" sub={`${subSummary.PENDING?.count??0} unpaid invoice(s)`}/>
+            <KPI label="Outstanding" value={`Rs. ${(subSummary.PENDING?.amount??0).toLocaleString()}`} color={T.warning} icon="⏳" sub={count(subSummary.PENDING?.count??0,"unpaid invoice")}/>
           </div>
           <Crd style={{padding:"26px"}}>
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:18,gap:12,flexWrap:"wrap"}}>
@@ -4144,7 +4144,7 @@ const SuperAdmin=({user,db,setDb,onLogout,onReload})=>{
               </div>
               <div style={{display:"flex",gap:8}}>
                 <Btn onClick={()=>run("gen-subs",()=>api.subscriptions.generate(thisPeriod),
-                  r=>`${r.created} invoice(s) generated for ${r.label}${r.skipped?` · ${r.skipped} already existed`:""}.`)}
+                  r=>`${count(r.created,"invoice")} generated for ${r.label}${r.skipped?` · ${r.skipped} already existed`:""}.`)}
                   out color={T.forest} style={{padding:"7px 14px",fontSize:12}} disabled={busy==="gen-subs"}>
                   {busy==="gen-subs"?"Generating…":`Generate ${thisPeriod} Invoices`}
                 </Btn>
@@ -4539,7 +4539,7 @@ const ClassRosterModal=({cls,students,onClose,onSaved})=>{
     setSaving(true);setErr("");
     try{
       const r=await api.classes.assignStudents(cls.id,picked);
-      onSaved(`${picked.length} student(s) moved into ${cls.name} ${cls.section}.`);
+      onSaved(`${count(picked.length,"student")} moved into ${cls.name} ${cls.section}.`);
     }catch(e){ setErr(e.errors?.[0]?.message||e.message||"Could not move those students."); }
     finally{ setSaving(false); }
   };
@@ -4588,7 +4588,7 @@ const ClassRosterModal=({cls,students,onClose,onSaved})=>{
       <div style={{display:"flex",gap:10}}>
         <Btn out color={T.muted} onClick={onClose} style={{flex:1,padding:"11px"}}>Close</Btn>
         <Btn onClick={assign} disabled={!picked.length||saving} style={{flex:2,padding:"11px"}}>
-          {saving?"Moving…":`Move ${picked.length||""} student(s)`}
+          {saving?"Moving…":picked.length?`Move ${count(picked.length,"student")}`:"Move students"}
         </Btn>
       </div>
     </Modal>
@@ -4717,7 +4717,7 @@ const AdminTimetableTab=({teachers,onChanged})=>{
         <Crd key={d} style={{padding:"20px 24px",marginBottom:14}}>
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14}}>
             <div style={{fontFamily:"Georgia,serif",fontSize:17,fontWeight:800,color:T.ink}}>{DAY_NAMES[d]}</div>
-            <span style={{fontSize:11,color:T.muted}}>{byDay(d).length} period(s)</span>
+            <span style={{fontSize:11,color:T.muted}}>{count(byDay(d).length,"period")}</span>
           </div>
 
           <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(230px,1fr))",gap:10}}>
@@ -5332,7 +5332,7 @@ const AdminPortal=({user,db,setDb,onLogout,onReload})=>{
       ]);
 
       const total=rows.reduce((a,r)=>a+r.outstanding,0);
-      return `${rows.length} family/families owe Rs. ${total.toLocaleString("en-PK")} across ${unpaid.length} unpaid invoice(s).`;
+      return `${count(rows.length,"family","families")} ${rows.length===1?"owes":"owe"} Rs. ${total.toLocaleString("en-PK")} across ${count(unpaid.length,"unpaid invoice")}.`;
     });
 
     // Mirrors the insight engine's own thresholds: below 60% average, or
@@ -5350,7 +5350,7 @@ const AdminPortal=({user,db,setDb,onLogout,onReload})=>{
         ["Student","name"],["Roll No","rollNo"],["Grade","grade"],["Section","section"],
         ["Average %","average"],["Attendance %","attendanceRate"],["Concern","concern"],
       ]);
-      return `${rows.length} student(s) flagged as needing attention.`;
+      return `${count(rows.length,"student")} flagged as needing attention.`;
     });
 
     const teacherPerf=()=>run("teachers",async()=>{
@@ -5360,7 +5360,7 @@ const AdminPortal=({user,db,setDb,onLogout,onReload})=>{
         ["Subject","name"],["Grade","grade"],["Teacher","teacher"],
         ["Students","students"],["Class Average %","average"],
       ]);
-      return `Subject performance for ${r.subjectPerformance.length} subject(s).`;
+      return `Subject performance for ${count(r.subjectPerformance.length,"subject")}.`;
     });
 
     const custom=()=>run("custom",async()=>{
@@ -5490,7 +5490,7 @@ const AdminPortal=({user,db,setDb,onLogout,onReload})=>{
 
     const overdue=()=>run("overdue",async()=>{
       const r=await api.fees.markOverdue();
-      return `${r.updated} invoice(s) marked overdue.`;
+      return `${count(r.updated,"invoice")} marked overdue.`;
     });
 
     /**
@@ -5504,8 +5504,8 @@ const AdminPortal=({user,db,setDb,onLogout,onReload})=>{
         return null;
       const r=await api.fees.remind();
       if(!r.sent) return "No unpaid invoices — nobody needed reminding.";
-      return `Reminder sent to ${r.sent} guardian(s) covering ${r.invoices} invoice(s)` +
-        (r.skipped?.length ? ` · ${r.skipped.length} student(s) skipped (no guardian linked)` : "") + ".";
+      return `Reminder sent to ${count(r.sent,"guardian")} covering ${count(r.invoices,"invoice")}` +
+        (r.skipped?.length ? ` · ${count(r.skipped.length,"student")} skipped (no guardian linked)` : "") + ".";
     });
 
     const exportCsv=()=>{
@@ -5735,7 +5735,7 @@ const AdminPortal=({user,db,setDb,onLogout,onReload})=>{
         );
         // Reported at portal level: onReload swaps `db`, which remounts this
         // component and would discard a local success message immediately.
-        setPErr("");setPNote(res.__message??`Attendance saved for ${res.marked} student(s) on ${date}.`);
+        setPErr("");setPNote(res.__message??`Attendance saved for ${count(res.marked,"student")} on ${date}.`);
         onReload?.();
       }catch(e){
         setErr(e.errors?.[0]?.message||e.message||"Could not save attendance.");
@@ -6445,7 +6445,7 @@ const AdminPortal=({user,db,setDb,onLogout,onReload})=>{
         if(dryRun){setPreview(r);}
         else{
           setPreview(null);
-          setNote(`${r.students} student(s) moved.`);
+          setNote(`${count(r.students,"student")} moved.`);
           setNonce(n=>n+1);
           onReload?.();
         }
@@ -6576,7 +6576,7 @@ const AdminPortal=({user,db,setDb,onLogout,onReload})=>{
         {preview&&(
           <div style={{border:`1px solid ${T.border}`,borderRadius:10,marginBottom:12,overflow:"hidden"}}>
             <div style={{background:T.paper,padding:"9px 14px",fontSize:12,fontWeight:700,color:T.ink}}>
-              {preview.students} student(s) would move · {preview.fromSession} → {preview.toSession}
+              {count(preview.students,"student")} would move · {preview.fromSession} → {preview.toSession}
             </div>
             <div style={{maxHeight:190,overflowY:"auto"}}>
               {preview.moves.map(m=>(
@@ -6594,7 +6594,7 @@ const AdminPortal=({user,db,setDb,onLogout,onReload})=>{
             {busy==="preview"?"Checking…":"Preview"}
           </Btn>
           <Btn onClick={()=>run(false)} disabled={!preview||Boolean(busy)} style={{flex:2,padding:"10px"}}>
-            {busy==="commit"?"Moving…":preview?`Move ${preview.students} student(s)`:"Preview first"}
+            {busy==="commit"?"Moving…":preview?`Move ${count(preview.students,"student")}`:"Preview first"}
           </Btn>
         </div>
 
@@ -7344,7 +7344,7 @@ const AdminPortal=({user,db,setDb,onLogout,onReload})=>{
         <StudentImportModal
           seatsLeft={isUnlimited?null:Math.max(0,studentLimit-seatsUsed)}
           onClose={()=>setModal(null)}
-          onImported={res=>{setPNote(`Imported ${res.imported} student(s)${res.skipped?`, skipped ${res.skipped}`:""}.`);onReload?.();}}
+          onImported={res=>{setPNote(`Imported ${count(res.imported,"student")}${res.skipped?`, skipped ${res.skipped}`:""}.`);onReload?.();}}
         />
       )}
       {modal==="notice"&&<NoticeComposer onClose={()=>setModal(null)} onSaved={()=>{setModal(null);onReload?.();}}/>}
@@ -7576,7 +7576,7 @@ const TeacherPortal=({user,db,onLogout,onReload,onUser})=>{
           date,
           Object.entries(marks).map(([studentId,status])=>({studentId,status}))
         );
-        setSaved(`Saved for ${res.marked} student(s).`);
+        setSaved(`Saved for ${count(res.marked,"student")}.`);
         onReload?.();
       }catch(e){
         setErr(e.errors?.[0]?.message||e.message||"Could not save attendance.");
@@ -7786,7 +7786,7 @@ const TeacherPortal=({user,db,onLogout,onReload,onUser})=>{
       setRecalcing(true);setErr("");setRecalcNote("");
       try{
         const r=await api.subjects.recalculate(id);
-        setRecalcNote(`${r?.enrollments??0} score(s) recalculated from their marks.`);
+        setRecalcNote(`${count(r?.enrollments??0,"score")} recalculated from their marks.`);
         setNonce(n=>n+1);
         onReload?.();
       }catch(e){
