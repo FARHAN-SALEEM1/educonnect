@@ -49,7 +49,7 @@ export const listUsers = asyncHandler(async (req, res) => {
       where,
       skip,
       take: limit,
-      orderBy: { createdAt: "desc" },
+      orderBy: [{ createdAt: "desc" }, { id: "asc" }],
       select: SAFE_SELECT,
     }),
   ]);

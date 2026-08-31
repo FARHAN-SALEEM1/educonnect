@@ -123,7 +123,7 @@ export const listStudents = asyncHandler(async (req, res) => {
       where,
       skip,
       take: limit,
-      orderBy: { [sortBy]: order },
+      orderBy: [{ [sortBy]: order }, { id: "asc" }],
       include: {
         parent: { select: { id: true, name: true, phone: true, email: true, relation: true } },
         enrollments: {

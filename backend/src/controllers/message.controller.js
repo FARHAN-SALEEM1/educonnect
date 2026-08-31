@@ -64,7 +64,7 @@ export const listMessages = asyncHandler(async (req, res) => {
       where,
       skip,
       take: limit,
-      orderBy: { createdAt: "desc" },
+      orderBy: [{ createdAt: "desc" }, { id: "asc" }],
       include: { ...MESSAGE_INCLUDE, _count: { select: { replies: true } } },
     }),
   ]);

@@ -65,7 +65,7 @@ export const listAssessments = asyncHandler(async (req, res) => {
       where,
       skip,
       take: limit,
-      orderBy: { takenOn: "desc" },
+      orderBy: [{ takenOn: "desc" }, { id: "asc" }],
       include: {
         examTerm: { select: { name: true } },
         enrollment: {

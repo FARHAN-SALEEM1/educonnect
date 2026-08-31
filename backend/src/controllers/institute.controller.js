@@ -89,7 +89,7 @@ export const listInstitutes = asyncHandler(async (req, res) => {
       where,
       skip,
       take: limit,
-      orderBy: { joinedAt: "desc" },
+      orderBy: [{ joinedAt: "desc" }, { id: "asc" }],
       include: {
         plan: { select: PLAN_PUBLIC },
         _count: { select: { students: { where: { deletedAt: null } }, teachers: { where: { deletedAt: null } }, parents: { where: { deletedAt: null } }, users: true } },

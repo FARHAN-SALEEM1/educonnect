@@ -56,7 +56,7 @@ export const listInvoices = asyncHandler(async (req, res) => {
       where,
       skip,
       take: limit,
-      orderBy: [{ period: "desc" }, { student: { name: "asc" } }],
+      orderBy: [{ period: "desc" }, { student: { name: "asc" } }, { id: "asc" }],
       include: {
         student: { select: { id: true, name: true, rollNo: true, grade: true, section: true } },
         items: { orderBy: { createdAt: "asc" } },

@@ -37,7 +37,7 @@ export const listParents = asyncHandler(async (req, res) => {
       where,
       skip,
       take: limit,
-      orderBy: { name: "asc" },
+      orderBy: [{ name: "asc" }, { id: "asc" }],
       include: {
         /**
          * Removed children are removed here too.

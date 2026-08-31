@@ -76,7 +76,7 @@ export const listTeachers = asyncHandler(async (req, res) => {
       where,
       skip,
       take: limit,
-      orderBy: { name: "asc" },
+      orderBy: [{ name: "asc" }, { id: "asc" }],
       include: {
         subjects: { select: { id: true, name: true, grade: true, color: true } },
         user: { select: { id: true, email: true, isActive: true, lastLoginAt: true } },

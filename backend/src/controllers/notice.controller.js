@@ -58,7 +58,7 @@ export const listNotices = asyncHandler(async (req, res) => {
       where,
       skip,
       take: limit,
-      orderBy: [{ isPinned: "desc" }, { publishedAt: "desc" }],
+      orderBy: [{ isPinned: "desc" }, { publishedAt: "desc" }, { id: "asc" }],
       include: {
         createdBy: { select: { id: true, name: true, role: true } },
         institute: { select: { id: true, name: true } },
