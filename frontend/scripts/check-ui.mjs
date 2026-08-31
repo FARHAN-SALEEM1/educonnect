@@ -184,6 +184,20 @@ ok(
   /const count = \(n, singular, plural = `\$\{singular\}s`\) =>/.test(src)
 );
 
+console.log("\n=== a date is the day it says ===");
+
+/**
+ * Dates are stored at midnight UTC. Read back with a local accessor on a
+ * machine behind UTC they name the day before: a challan due on the 10th
+ * showed "9", and a Thursday register showed a guardian "Wed". `paidAt` is a
+ * real moment rather than a day, so it keeps its local formatting.
+ */
+ok(
+  "the fee table reads a due date in UTC",
+  src.includes("new Date(f.dueDate).getUTCDate()"),
+  "getDate() on a stored date names the previous day west of UTC"
+);
+
 console.log("\n=== controls a finger has to reach ===");
 
 /**

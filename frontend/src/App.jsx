@@ -5667,7 +5667,7 @@ const AdminPortal=({user,db,setDb,onLogout,onReload})=>{
                           </div>
                         )}
                       </td>
-                      <td style={{padding:"12px",fontSize:13,color:T.muted}}>{f.dueDate?new Date(f.dueDate).getDate():"—"}</td>
+                      <td style={{padding:"12px",fontSize:13,color:T.muted}}>{f.dueDate?new Date(f.dueDate).getUTCDate():"—"}</td>
                       <td style={{padding:"12px",fontSize:13,color:T.muted}}>{f.paidAt?new Date(f.paidAt).toLocaleDateString(undefined,{month:"short",day:"numeric"}):"—"}</td>
                       <td style={{padding:"12px"}}><Bdg label={st==="paid"?"✓ Paid":st==="overdue"?"⚠ Overdue":"⏳ Pending"} color={c} bg={`${c}15`}/></td>
                       <td style={{padding:"12px",whiteSpace:"nowrap",...stickyCol}}>
