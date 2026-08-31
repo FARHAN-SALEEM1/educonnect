@@ -1,5 +1,6 @@
 import { Fragment, useState, useEffect, useMemo, useReducer } from "react";
 import api from "./api/endpoints.js";
+import { t, tn, useLang, getLang, setLang } from "./i18n.js";
 import { tokens, restoreSession, setSessionExpiredHandler } from "./api/client.js";
 import { useDb, fetchAll } from "./hooks/useDb.js";
 import { toLegacyUser } from "./adapters/legacy.js";
@@ -1069,7 +1070,7 @@ const ChildSwitcher=({children:kids,value,onChange})=>{
   if(!kids||kids.length<2)return null;
   return(
     <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap",marginBottom:18}}>
-      <span style={{fontSize:11,fontWeight:700,color:T.muted,textTransform:"uppercase",letterSpacing:".6px"}}>Viewing</span>
+      <span style={{fontSize:11,fontWeight:700,color:T.muted,textTransform:"uppercase",letterSpacing:".6px"}}>{t("Viewing")}</span>
       {kids.map(k=>{
         const on=k.id===value;
         return(
@@ -6936,7 +6937,7 @@ const AdminPortal=({user,db,setDb,onLogout,onReload})=>{
             {notices.map(n=>(
               <Crd key={n.id} style={{padding:"24px"}}>
                 <div style={{display:"flex",justifyContent:"space-between",marginBottom:10}}>
-                  <Bdg label={n.cat} color={catC(n.cat)} bg={`${catC(n.cat)}15`}/>
+                  <Bdg label={t(n.cat)} color={catC(n.cat)} bg={`${catC(n.cat)}15`}/>
                   <span style={{fontSize:12,color:T.muted}}>{n.date}</span>
                 </div>
                 <div style={{fontFamily:"Georgia,serif",fontSize:16,fontWeight:700,color:T.ink,marginBottom:8,lineHeight:1.3}}>{n.title}</div>
@@ -7938,7 +7939,7 @@ const TeacherPortal=({user,db,onLogout,onReload,onUser})=>{
               const mine=Boolean(n.authorId&&n.authorId===user.id);
               return(
                 <Crd key={n.id} style={{padding:"24px"}}>
-                  <div style={{display:"flex",justifyContent:"space-between",marginBottom:10}}><Bdg label={n.cat} color={catC(n.cat)} bg={`${catC(n.cat)}15`}/><span style={{fontSize:12,color:T.muted}}>{n.date}</span></div>
+                  <div style={{display:"flex",justifyContent:"space-between",marginBottom:10}}><Bdg label={t(n.cat)} color={catC(n.cat)} bg={`${catC(n.cat)}15`}/><span style={{fontSize:12,color:T.muted}}>{n.date}</span></div>
                   <div style={{fontFamily:"Georgia,serif",fontSize:16,fontWeight:700,color:T.ink,marginBottom:8}}>{n.title}</div>
                   <p style={{fontSize:13,color:T.muted,lineHeight:1.7}}>{n.body}</p>
                   <div style={{display:"flex",gap:10,alignItems:"center",marginTop:14}}>
@@ -8008,6 +8009,8 @@ const TeacherPortal=({user,db,onLogout,onReload,onUser})=>{
 const PARENT_TABS=["dashboard","attendance","grades","ai","messages","fees","timetable","notices","profile"];
 
 const ParentPortal=({user,db,onLogout,onReload})=>{
+  // Repaints this portal when the guardian changes language.
+  useLang();
   const[tab,setTab]=useHashTab("dashboard",PARENT_TABS);
   const[col,setCol]=useState(false);
   // The challan or receipt a guardian asked to print.
@@ -8054,15 +8057,15 @@ const ParentPortal=({user,db,onLogout,onReload})=>{
   const months=["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
 
   const nav=[
-    {id:"dashboard", label:"Dashboard",   icon:"⊞"},
-    {id:"attendance",label:"Attendance",  icon:"◷"},
-    {id:"grades",    label:"Grades",      icon:"◈"},
-    {id:"ai",        label:"AI Insights", icon:"✦"},
-    {id:"messages",  label:"Messages",    icon:"◎",badge:msgs.filter(m=>m.unread).length},
-    {id:"fees",      label:"Fees",        icon:"◑"},
-    {id:"timetable", label:"Timetable",   icon:"▦"},
-    {id:"notices",   label:"Notices",     icon:"◆"},
-    {id:"profile",   label:"Profile",     icon:"◉"},
+    {id:"dashboard", label:t("Dashboard"),   icon:"⊞"},
+    {id:"attendance",label:t("Attendance"),  icon:"◷"},
+    {id:"grades",    label:t("Grades"),      icon:"◈"},
+    {id:"ai",        label:t("AI Insights"), icon:"✦"},
+    {id:"messages",  label:t("Messages"),    icon:"◎",badge:msgs.filter(m=>m.unread).length},
+    {id:"fees",      label:t("Fees"),        icon:"◑"},
+    {id:"timetable", label:t("Timetable"),   icon:"▦"},
+    {id:"notices",   label:t("Notices"),     icon:"◆"},
+    {id:"profile",   label:t("Profile"),     icon:"◉"},
   ];
 
   const sendReply=async()=>{
@@ -8123,21 +8126,21 @@ const ParentPortal=({user,db,onLogout,onReload})=>{
 
     return(
       <Crd style={{padding:"24px",marginBottom:18,border:`1.5px solid ${T.forest}44`,animation:"fadeUp .3s"}}>
-        <div style={{display:"flex",justifyContent:"space-between",marginBottom:16}}><div style={{fontSize:14,fontWeight:700,color:T.ink}}>New Message</div><span onClick={()=>setCompose(false)} style={{cursor:"pointer",color:T.muted,fontSize:22}}>×</span></div>
+        <div style={{display:"flex",justifyContent:"space-between",marginBottom:16}}><div style={{fontSize:14,fontWeight:700,color:T.ink}}>{t("New Message")}</div><span onClick={()=>setCompose(false)} style={{cursor:"pointer",color:T.muted,fontSize:22}}>×</span></div>
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
-          <Sel label="To (Teacher / Admin)"
+          <Sel label={t("To (Teacher / Admin)")}
             options={[{v:"",l:contacts?(contacts.length?"Choose a recipient…":"No contacts available"):"Loading…"},
               ...(contacts??[]).map(c=>({v:c.id,l:`${c.name}${c.role?` — ${c.role.toLowerCase()}`:""}`}))]}
             value={f.to} onChange={e=>s("to",e.target.value)}/>
-          <Inp label="Subject" value={f.subject} onChange={e=>s("subject",e.target.value)} placeholder="Subject of message"/>
+          <Inp label={t("Subject")} value={f.subject} onChange={e=>s("subject",e.target.value)} placeholder={t("Subject of message")}/>
         </div>
         <div style={{marginBottom:14}}>
-          <div style={{fontSize:11,fontWeight:700,color:T.muted,marginBottom:6,textTransform:"uppercase",letterSpacing:".6px"}}>Message</div>
-          <textarea rows={4} value={f.body} onChange={e=>s("body",e.target.value)} placeholder="Write your message here…" style={{width:"100%",padding:"10px 14px",borderRadius:10,border:`1.5px solid ${T.border}`,fontSize:13,color:T.ink,background:T.paper,resize:"none",outline:"none",fontFamily:"inherit"}}/>
+          <div style={{fontSize:11,fontWeight:700,color:T.muted,marginBottom:6,textTransform:"uppercase",letterSpacing:".6px"}}>{t("Message")}</div>
+          <textarea rows={4} value={f.body} onChange={e=>s("body",e.target.value)} placeholder={t("Write your message here…")} style={{width:"100%",padding:"10px 14px",borderRadius:10,border:`1.5px solid ${T.border}`,fontSize:13,color:T.ink,background:T.paper,resize:"none",outline:"none",fontFamily:"inherit"}}/>
         </div>
         {e2&&<div style={{background:`${T.danger}12`,color:T.danger,borderRadius:10,padding:"10px 14px",fontSize:13,marginBottom:12,border:`1px solid ${T.danger}30`}}>{e2}</div>}
         <div style={{display:"flex",gap:10}}>
-          <Btn onClick={()=>setCompose(false)} out color={T.muted} style={{flex:1,padding:"11px"}}>Cancel</Btn>
+          <Btn onClick={()=>setCompose(false)} out color={T.muted} style={{flex:1,padding:"11px"}}>{t("Cancel")}</Btn>
           <Btn onClick={send} style={{flex:2,padding:"11px"}} disabled={!f.to||!f.subject.trim()||!f.body.trim()||sending}>{sending?"Sending…":"Send Message"}</Btn>
         </div>
       </Crd>
@@ -8148,31 +8151,46 @@ const ParentPortal=({user,db,onLogout,onReload})=>{
     <Shell nav={nav} tab={tab} setTab={setTab} user={user} inst={inst} collapsed={col} setCollapsed={setCol} onLogout={onLogout}>
       {feeSlip&&<FeeSlipModal invoiceId={feeSlip} onClose={()=>setFeeSlip(null)}/>}
       {/* Above everything, because every screen below it is about one child. */}
+      {/* The guardian's own language, remembered between visits. Sits above
+          the child picker because it applies to every screen below it. */}
+      <div style={{display:"flex",justifyContent:"flex-end",marginBottom:10}}>
+        <div style={{display:"flex",gap:2,background:T.paper,borderRadius:99,padding:3}}>
+          {[["en","English"],["ur","اردو"]].map(([code,name])=>(
+            <span key={code} {...pressable(()=>setLang(code),name)}
+              style={{padding:"5px 14px",borderRadius:99,fontSize:12,fontWeight:700,cursor:"pointer",
+                background:getLang()===code?T.card:"transparent",
+                color:getLang()===code?T.forest:T.muted,
+                boxShadow:getLang()===code?"0 1px 3px rgba(15,23,42,.10)":"none"}}>
+              {name}
+            </span>
+          ))}
+        </div>
+      </div>
       <ChildSwitcher children={kids} value={student?.id} onChange={setChildId}/>
       {/* DASHBOARD */}
       {tab==="dashboard"&&(
         <div style={{animation:"fadeUp .35s"}}>
           <div style={{marginBottom:24}}>
             <div style={{fontSize:10,fontWeight:700,color:T.muted,letterSpacing:"1.8px",textTransform:"uppercase",marginBottom:5}}>{new Date().toLocaleDateString(undefined,{weekday:"long",month:"long",day:"numeric",year:"numeric"})}</div>
-            <h1 style={{fontFamily:"Georgia,serif",fontSize:34,fontWeight:800,color:T.ink}}>{greeting()}, <em style={{color:T.green,fontStyle:"italic"}}>{parent?.name.split(" ")[0]}.</em></h1>
-            <p style={{color:T.muted,fontSize:14,marginTop:5}}>Here's everything about <b>{student.name}</b>'s academic journey.</p>
+            <h1 style={{fontFamily:"Georgia,serif",fontSize:34,fontWeight:800,color:T.ink}}>{t(greeting())}, <em style={{color:T.green,fontStyle:"italic"}}>{parent?.name.split(" ")[0]}.</em></h1>
+            <p style={{color:T.muted,fontSize:14,marginTop:5}}>{t("Here's everything about ")}<b>{student.name}</b>{t("'s academic journey.")}</p>
           </div>
           <div className="ec-pair" style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:14,marginBottom:20}}>
-            <KPI label="Average" value={`${student.average}%`} color={T.forest} icon="◈" sub="Across all subjects"/>
+            <KPI label={t("Average")} value={`${student.average}%`} color={T.forest} icon="◈" sub={t("Across all subjects")}/>
             {/* A child with nothing marked has no position — the same rule the
                 result card applies. Showing "#0 of 5" was the old bug, and
                 showing "#4 of 5" beside a blank card was the older one. */}
-            <KPI label="Class Rank" value={student.rank?`#${student.rank}`:"—"} color={T.purple} icon="◆"
-              sub={student.rank?`of ${count(student.classSize,"student")}`:"No marks recorded yet"}/>
-            <KPI label="Attendance" value={`${student.att.rate??student.att.present}%`} color={T.success} icon="◷" sub={count(student.att.days,"school day")}/>
-            <KPI label="AI Score" value={student.aiScore==null?"—":`${student.aiScore}/100`} color={T.gold} icon="✦" sub={student.aiScoreLabel}/>
+            <KPI label={t("Class Rank")} value={student.rank?`#${student.rank}`:"—"} color={T.purple} icon="◆"
+              sub={student.rank?tn("of {n} students",student.classSize):t("No marks recorded yet")}/>
+            <KPI label={t("Attendance")} value={`${student.att.rate??student.att.present}%`} color={T.success} icon="◷" sub={tn(student.att.days===1?"{n} school day":t("{n} school days"),student.att.days)}/>
+            <KPI label={t("AI Score")} value={student.aiScore==null?"—":`${student.aiScore}/100`} color={T.gold} icon="✦" sub={t(student.aiScoreLabel)}/>
           </div>
           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 300px",gap:18}}>
             {/* Subjects */}
             <Crd style={{padding:"24px"}}>
               <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}>
-                <div style={{fontSize:14,fontWeight:700,color:T.ink}}>Subject Performance</div>
-                <span onClick={()=>setTab("grades")} style={{fontSize:12,color:T.green,cursor:"pointer",fontWeight:600}}>Full report →</span>
+                <div style={{fontSize:14,fontWeight:700,color:T.ink}}>{t("Subject Performance")}</div>
+                <span onClick={()=>setTab("grades")} style={{fontSize:12,color:T.green,cursor:"pointer",fontWeight:600}}>{t("Full report →")}</span>
               </div>
               {student.subjects.map((s,i)=>(
                 <div key={s.name} style={{marginBottom:13}}>
@@ -8188,13 +8206,13 @@ const ParentPortal=({user,db,onLogout,onReload})=>{
             <div style={{display:"flex",flexDirection:"column",gap:16}}>
               <Crd style={{padding:"22px"}}>
                 <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14}}>
-                  <div style={{fontSize:13,fontWeight:700,color:T.ink}}>Attendance</div>
-                  <span onClick={()=>setTab("attendance")} style={{fontSize:12,color:T.green,cursor:"pointer",fontWeight:600}}>Details →</span>
+                  <div style={{fontSize:13,fontWeight:700,color:T.ink}}>{t("Attendance")}</div>
+                  <span onClick={()=>setTab("attendance")} style={{fontSize:12,color:T.green,cursor:"pointer",fontWeight:600}}>{t("Details →")}</span>
                 </div>
                 <div style={{display:"flex",gap:18,alignItems:"center"}}>
                   <Donut p={student.att.present} color={T.forest} size={80}/>
                   <div style={{flex:1}}>
-                    {[["Present",student.att.present,T.success],["Absent",student.att.absent,T.danger],["Late",student.att.late,T.warning]].map(([l,v,c])=>(
+                    {[[t("Present"),student.att.present,T.success],[t("Absent"),student.att.absent,T.danger],[t("Late"),student.att.late,T.warning]].map(([l,v,c])=>(
                       <div key={l} style={{display:"flex",justifyContent:"space-between",marginBottom:7}}>
                         <div style={{display:"flex",gap:6,alignItems:"center"}}><div style={{width:7,height:7,borderRadius:"50%",background:c}}/><span style={{fontSize:12,color:T.muted}}>{l}</span></div>
                         <span style={{fontSize:13,fontWeight:700,color:T.ink}}>{v}</span>
@@ -8204,7 +8222,7 @@ const ParentPortal=({user,db,onLogout,onReload})=>{
                 </div>
               </Crd>
               <Crd style={{padding:"22px",flex:1}}>
-                <div style={{fontSize:13,fontWeight:700,color:T.ink,marginBottom:14}}>Recent Assessments</div>
+                <div style={{fontSize:13,fontWeight:700,color:T.ink,marginBottom:14}}>{t("Recent Assessments")}</div>
                 {student.assessments.slice(0,4).map((a,i)=>(
                   <div key={i} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"9px 0",borderBottom:i<3?`1px solid ${T.border}`:"none"}}>
                     <div><div style={{fontSize:12,fontWeight:500,color:T.ink}}>{a.sub} <span style={{color:T.muted,fontWeight:400}}>· {a.type}</span></div><div style={{fontSize:10,color:T.muted}}>{a.date}</div></div>
@@ -8216,15 +8234,15 @@ const ParentPortal=({user,db,onLogout,onReload})=>{
             {/* Right col */}
             <div style={{display:"flex",flexDirection:"column",gap:14}}>
               <Crd style={{padding:"22px",border:`1.5px solid ${T.gold}44`,background:`linear-gradient(135deg,#fff,${T.gold}06)`}}>
-                <div style={{display:"flex",gap:6,alignItems:"center",marginBottom:10}}><span style={{color:T.gold,animation:"shimmer 2s infinite"}}>✦</span><span style={{fontSize:10,fontWeight:700,color:T.gold,letterSpacing:"1.5px",textTransform:"uppercase"}}>AI Alert</span></div>
-                <div style={{fontFamily:"Georgia,serif",fontSize:15,fontWeight:700,color:T.ink,lineHeight:1.3,marginBottom:8}}>{topInsight?`${topInsight.sub} needs attention`:"No concerns flagged"}</div>
-                <p style={{fontSize:12,color:T.muted,lineHeight:1.7}}>{topInsight?topInsight.tip:`${student.name} has no outstanding academic or attendance concerns this term.`}</p>
-                <Btn onClick={()=>setTab("ai")} full style={{marginTop:14,padding:"9px",fontSize:12}}>View AI Insights →</Btn>
+                <div style={{display:"flex",gap:6,alignItems:"center",marginBottom:10}}><span style={{color:T.gold,animation:"shimmer 2s infinite"}}>✦</span><span style={{fontSize:10,fontWeight:700,color:T.gold,letterSpacing:"1.5px",textTransform:"uppercase"}}>{t("AI Alert")}</span></div>
+                <div style={{fontFamily:"Georgia,serif",fontSize:15,fontWeight:700,color:T.ink,lineHeight:1.3,marginBottom:8}}>{topInsight?`${topInsight.sub} needs attention`:t("No concerns flagged")}</div>
+                <p style={{fontSize:12,color:T.muted,lineHeight:1.7}}>{topInsight?topInsight.tip:tn("{n} has no outstanding academic or attendance concerns this term.",student.name)}</p>
+                <Btn onClick={()=>setTab("ai")} full style={{marginTop:14,padding:"9px",fontSize:12}}>{t("View AI Insights →")}</Btn>
               </Crd>
               <Crd style={{padding:"22px",flex:1}}>
                 <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14}}>
-                  <div style={{fontSize:13,fontWeight:700,color:T.ink}}>Messages</div>
-                  <span onClick={()=>setTab("messages")} style={{fontSize:12,color:T.green,cursor:"pointer",fontWeight:600}}>All →</span>
+                  <div style={{fontSize:13,fontWeight:700,color:T.ink}}>{t("Messages")}</div>
+                  <span onClick={()=>setTab("messages")} style={{fontSize:12,color:T.green,cursor:"pointer",fontWeight:600}}>{t("All →")}</span>
                 </div>
                 {msgs.slice(0,3).map((m,i)=>(
                   <div key={m.id} onClick={()=>{setTab("messages");setSelMsg(m);}} style={{display:"flex",gap:9,padding:"9px 0",borderBottom:i<2?`1px solid ${T.border}`:"none",cursor:"pointer"}}>
@@ -8239,8 +8257,8 @@ const ParentPortal=({user,db,onLogout,onReload})=>{
               </Crd>
               <Crd style={{padding:"22px"}}>
                 <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
-                  <div style={{fontSize:13,fontWeight:700,color:T.ink}}>Fees</div>
-                  <span onClick={()=>setTab("fees")} style={{fontSize:12,color:T.green,cursor:"pointer",fontWeight:600}}>Details →</span>
+                  <div style={{fontSize:13,fontWeight:700,color:T.ink}}>{t("Fees")}</div>
+                  <span onClick={()=>setTab("fees")} style={{fontSize:12,color:T.green,cursor:"pointer",fontWeight:600}}>{t("Details →")}</span>
                 </div>
                 {student.fees.slice(0,3).map((f,i)=>(
                   <div key={i} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"7px 0",borderBottom:`1px solid ${T.border}`}}>
@@ -8251,7 +8269,7 @@ const ParentPortal=({user,db,onLogout,onReload})=>{
                 {(()=>{const due=student.fees.find(f=>f.status==="pending"||f.status==="overdue");
                   return due
                     ?<div style={{fontSize:11,color:T.clay,marginTop:8,fontWeight:600}}>⚠ {due.month} fee pending — due {due.dueDate}</div>
-                    :<div style={{fontSize:11,color:T.success,marginTop:8,fontWeight:600}}>✓ All fees cleared</div>;})()}
+                    :<div style={{fontSize:11,color:T.success,marginTop:8,fontWeight:600}}>{t("✓ All fees cleared")}</div>;})()}
               </Crd>
             </div>
           </div>
@@ -8260,11 +8278,11 @@ const ParentPortal=({user,db,onLogout,onReload})=>{
       {/* ATTENDANCE */}
       {tab==="attendance"&&(
         <div style={{animation:"fadeUp .35s"}}>
-          <SecHead pre="Tracking" title="Attendance Record"/>
+          <SecHead pre={t("Tracking")} title={t("Attendance Record")}/>
           <div style={{display:"grid",gridTemplateColumns:"1fr 280px",gap:18}}>
             <div style={{display:"flex",flexDirection:"column",gap:16}}>
               <Crd style={{padding:"26px"}}>
-                <div style={{fontSize:14,fontWeight:700,color:T.ink,marginBottom:16}}>Attendance — last 12 months</div>
+                <div style={{fontSize:14,fontWeight:700,color:T.ink,marginBottom:16}}>{t("Attendance — last 12 months")}</div>
                 {/* Bars scale to the busiest month in the series rather than an
                     assumed 22-day month, and each is labelled from its own
                     period — the labels used to be a fixed Jan…Dec list. */}
@@ -8286,9 +8304,9 @@ const ParentPortal=({user,db,onLogout,onReload})=>{
                 })()}
                 {/* Real day counts, not the fixed 87/8/5/2/100/87% row. */}
                 <div style={{display:"grid",gridTemplateColumns:"repeat(6,1fr)",gap:8,marginTop:18}}>
-                  {[[student.att.counts.present,"Present",T.forest],[student.att.counts.absent,"Absent",T.danger],
-                    [student.att.counts.late,"Late",T.warning],[student.att.counts.leave,"Leave",T.muted],
-                    [student.att.counts.total,"Total",T.ink],[`${student.att.rate}%`,"Rate",T.success]].map(([v,l,c])=>(
+                  {[[student.att.counts.present,t("Present"),T.forest],[student.att.counts.absent,t("Absent"),T.danger],
+                    [student.att.counts.late,t("Late"),T.warning],[student.att.counts.leave,t("Leave"),T.muted],
+                    [student.att.counts.total,t("Total"),T.ink],[`${student.att.rate}%`,t("Rate"),T.success]].map(([v,l,c])=>(
                     <div key={l} style={{padding:"10px 6px",background:T.paper,borderRadius:10,textAlign:"center"}}>
                       <div style={{fontFamily:"Georgia,serif",fontSize:18,fontWeight:800,color:c}}>{v}</div>
                       <div style={{fontSize:9,color:T.muted,marginTop:2}}>{l}</div>
@@ -8297,7 +8315,7 @@ const ParentPortal=({user,db,onLogout,onReload})=>{
                 </div>
               </Crd>
               <Crd style={{padding:"24px"}}>
-                <div style={{fontSize:13,fontWeight:700,color:T.ink,marginBottom:16}}>Most Recent Days</div>
+                <div style={{fontSize:13,fontWeight:700,color:T.ink,marginBottom:16}}>{t("Most Recent Days")}</div>
                 <div style={{display:"flex",gap:12}}>
                   {student.weekAtt.map((w,i)=>{
                     const c=w.s==="present"?T.success:w.s==="absent"?T.danger:T.warning;
@@ -8323,7 +8341,7 @@ const ParentPortal=({user,db,onLogout,onReload})=>{
                 const attInsight=(student.aiRecs??[]).find(r=>r.type==="ATTENDANCE");
                 return(
                   <Crd style={{padding:"22px",border:`1.5px solid ${T.gold}44`}}>
-                    <div style={{fontSize:10,fontWeight:700,color:T.gold,letterSpacing:"1.5px",textTransform:"uppercase",marginBottom:10}}>✦ AI Insight</div>
+                    <div style={{fontSize:10,fontWeight:700,color:T.gold,letterSpacing:"1.5px",textTransform:"uppercase",marginBottom:10}}>{t("✦ AI Insight")}</div>
                     {attInsight?(
                       <>
                         <div style={{fontFamily:"Georgia,serif",fontSize:15,fontWeight:700,color:T.ink,marginBottom:8,lineHeight:1.3}}>{attInsight.sub}</div>
@@ -8331,15 +8349,15 @@ const ParentPortal=({user,db,onLogout,onReload})=>{
                       </>
                     ):(
                       <p style={{fontSize:12,color:T.muted,lineHeight:1.7}}>
-                        No attendance concerns flagged for {student.name}.
+                        {tn("No attendance concerns flagged for {n}.",student.name)}
                       </p>
                     )}
                   </Crd>
                 );
               })()}
               <Crd style={{padding:"22px"}}>
-                <div style={{fontSize:13,fontWeight:700,color:T.ink,marginBottom:14}}>vs. Target</div>
-                {[["Current",student.att.rate,T.success],["Target",95,T.forest],["Minimum",75,T.muted]].map(([l,v,c])=>(
+                <div style={{fontSize:13,fontWeight:700,color:T.ink,marginBottom:14}}>{t("vs. Target")}</div>
+                {[[t("Current"),student.att.rate,T.success],[t("Target"),95,T.forest],[t("Minimum"),75,T.muted]].map(([l,v,c])=>(
                   <div key={l} style={{marginBottom:13}}>
                     <div style={{display:"flex",justifyContent:"space-between",marginBottom:5}}><span style={{fontSize:12,color:T.muted}}>{l}</span><span style={{fontSize:12,fontWeight:700,color:c}}>{v}%</span></div>
                     <Bar val={v} color={c}/>
@@ -8349,16 +8367,16 @@ const ParentPortal=({user,db,onLogout,onReload})=>{
               {/* Derived from the attendance record actually held for this
                   student. Every figure here was previously a literal. */}
               <Crd style={{padding:"22px"}}>
-                <div style={{fontSize:13,fontWeight:700,color:T.ink,marginBottom:12}}>Quick Stats</div>
+                <div style={{fontSize:13,fontWeight:700,color:T.ink,marginBottom:12}}>{t("Quick Stats")}</div>
                 {(()=>{
                   const best=[...student.monthlyAtt].sort((a,b)=>b.present-a.present)[0];
                   const c=student.att.counts;
                   const punctual=c.total?Math.round((c.present/c.total)*100):0;
                   return[
-                    ["Days recorded",String(c.total)],
-                    ["Best month",best&&best.present?`${best.label} (${count(best.present,"day")})`:"—"],
-                    ["On-time rate",`${punctual}%`],
-                    ["Leave days",String(c.leave)],
+                    [t("Days recorded"),String(c.total)],
+                    [t("Best month"),best&&best.present?`${best.label} (${count(best.present,"day")})`:"—"],
+                    [t("On-time rate"),`${punctual}%`],
+                    [t("Leave days"),String(c.leave)],
                   ].map(([l,v])=>(
                     <div key={l} style={{display:"flex",justifyContent:"space-between",padding:"8px 0",borderBottom:`1px solid ${T.border}`}}>
                       <span style={{fontSize:12,color:T.muted}}>{l}</span><span style={{fontSize:12,fontWeight:700,color:T.ink}}>{v}</span>
@@ -8373,16 +8391,16 @@ const ParentPortal=({user,db,onLogout,onReload})=>{
       {/* GRADES */}
       {tab==="grades"&&(
         <div style={{animation:"fadeUp .35s"}}>
-          <SecHead pre="Academic" title="Grades & Results" action={
+          <SecHead pre={t("Academic")} title={t("Grades & Results")} action={
             student?.id
-              ? <Btn onClick={()=>setReportCard(student.id)} style={{marginBottom:4}}>View Result Card</Btn>
+              ? <Btn onClick={()=>setReportCard(student.id)} style={{marginBottom:4}}>{t("View Result Card")}</Btn>
               : null
           }/>
           <div style={{display:"grid",gridTemplateColumns:"1fr 290px",gap:18}}>
             <Crd style={{padding:"26px"}}>
               <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:18}}>
-                <div style={{fontSize:14,fontWeight:700,color:T.ink}}>Subject Breakdown</div>
-                <span style={{fontSize:11,color:T.muted}}>Click a row for details · ↑↓ = AI trend</span>
+                <div style={{fontSize:14,fontWeight:700,color:T.ink}}>{t("Subject Breakdown")}</div>
+                <span style={{fontSize:11,color:T.muted}}>{t("Click a row for details · ↑↓ = AI trend")}</span>
               </div>
               {student.subjects.map((s,i)=>(
                 <div key={s.name} onClick={()=>setSelSub(selSub===i?null:i)} style={{padding:"14px 0",borderBottom:`1px solid ${T.border}`,cursor:"pointer"}}>
@@ -8398,7 +8416,7 @@ const ParentPortal=({user,db,onLogout,onReload})=>{
                     </div>
                   </div>
                   <Bar val={s.score} color={s.color} delay={i*70}/>
-                  <span style={{fontSize:11,color:T.muted,marginTop:4,display:"block"}}>{s.scored?`${s.score}/100`:"No marks recorded yet"} · Previous: {s.prev}%</span>
+                  <span style={{fontSize:11,color:T.muted,marginTop:4,display:"block"}}>{s.scored?`${s.score}/100`:t("No marks recorded yet")} · Previous: {s.prev}%</span>
                   {selSub===i&&(
                     <div style={{marginTop:12,padding:"12px 14px",background:T.paper,borderRadius:10,fontSize:13,color:T.muted,lineHeight:1.7,border:`1px solid ${T.border}`}}>
                       Change from last test: <b style={{color:s.score>s.prev?T.success:T.danger}}>{s.score>s.prev?"+":"-"}{Math.abs(s.score-s.prev)}%</b> · Predicted next: <b style={{color:T.forest}}>{s.pred}%</b>
@@ -8409,17 +8427,17 @@ const ParentPortal=({user,db,onLogout,onReload})=>{
             </Crd>
             <div style={{display:"flex",flexDirection:"column",gap:14}}>
               <Crd style={{padding:"26px",background:G(T.forest,T.green),border:"none"}}>
-                <div style={{fontSize:10,color:"rgba(255,255,255,.5)",fontWeight:700,letterSpacing:"1.5px",textTransform:"uppercase",marginBottom:5}}>Current Average</div>
+                <div style={{fontSize:10,color:"rgba(255,255,255,.5)",fontWeight:700,letterSpacing:"1.5px",textTransform:"uppercase",marginBottom:5}}>{t("Current Average")}</div>
                 {/* Standing and progress read from the real rank and average; this
                     claimed "Top 10% of class" and a fixed 82% bar for everyone. */}
                 <div style={{fontFamily:"Georgia,serif",fontSize:52,fontWeight:800,color:"#fff",lineHeight:1}}>{student.average}%</div>
                 <div style={{fontSize:13,color:"rgba(255,255,255,.6)",marginTop:8}}>
-                  {student.rank&&student.classSize?`Ranked #${student.rank} of ${student.classSize} in class`:"Class rank not available yet"}
+                  {student.rank&&student.classSize?`Ranked #${student.rank} of ${student.classSize} in class`:t("Class rank not available yet")}
                 </div>
                 <div style={{marginTop:14,height:4,background:"rgba(255,255,255,.15)",borderRadius:99,overflow:"hidden"}}><div style={{height:"100%",width:`${Math.min(100,student.average)}%`,background:T.mint,borderRadius:99}}/></div>
               </Crd>
               <Crd style={{padding:"22px"}}>
-                <div style={{fontSize:13,fontWeight:700,color:T.ink,marginBottom:12}}>All Assessments</div>
+                <div style={{fontSize:13,fontWeight:700,color:T.ink,marginBottom:12}}>{t("All Assessments")}</div>
                 {student.assessments.map((a,i)=>(
                   <div key={i} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"9px 0",borderBottom:i<student.assessments.length-1?`1px solid ${T.border}`:"none"}}>
                     <div><div style={{fontSize:12,fontWeight:500,color:T.ink}}>{a.sub}</div><div style={{fontSize:10,color:T.muted}}>{a.type} · {a.date}</div></div>
@@ -8434,11 +8452,11 @@ const ParentPortal=({user,db,onLogout,onReload})=>{
       {/* AI INSIGHTS */}
       {tab==="ai"&&(
         <div style={{animation:"fadeUp .35s"}}>
-          <SecHead pre="Intelligence" title="AI Insights & Predictions"/>
+          <SecHead pre={t("Intelligence")} title={t("AI Insights & Predictions")}/>
           <Crd style={{padding:"32px",marginBottom:18,background:`linear-gradient(140deg,${T.ink},#1a3355)`,border:"none",position:"relative",overflow:"hidden"}}>
             <div style={{position:"absolute",top:-50,right:-50,width:200,height:200,borderRadius:"50%",background:T.gold,opacity:.05}}/>
             <div style={{position:"absolute",bottom:-40,left:100,width:180,height:180,borderRadius:"50%",background:T.mint,opacity:.05}}/>
-            <div style={{display:"flex",gap:8,alignItems:"center",marginBottom:12}}><span style={{color:T.gold,animation:"shimmer 2s infinite",fontSize:18}}>✦</span><span style={{fontSize:10,fontWeight:700,color:T.gold,letterSpacing:"2px",textTransform:"uppercase"}}>AI Academic Intelligence Engine</span></div>
+            <div style={{display:"flex",gap:8,alignItems:"center",marginBottom:12}}><span style={{color:T.gold,animation:"shimmer 2s infinite",fontSize:18}}>✦</span><span style={{fontSize:10,fontWeight:700,color:T.gold,letterSpacing:"2px",textTransform:"uppercase"}}>{t("AI Academic Intelligence Engine")}</span></div>
             {/* Every figure below comes from the insight engine's own output:
                 the projection is the mean of its per-subject predicted scores,
                 the score and risk label are what it computed. This block used
@@ -8453,17 +8471,17 @@ const ParentPortal=({user,db,onLogout,onReload})=>{
                   <h2 style={{fontFamily:"Georgia,serif",fontSize:26,fontWeight:800,color:"#fff",marginBottom:10,lineHeight:1.2,maxWidth:560}}>
                     {subs.length
                       ?<>{student.name} is projected to average <em style={{color:T.mint}}>{projected}%</em> across their subjects</>
-                      :<>No subject data recorded for {student.name} yet</>}
+                      :<>{tn("No subject data recorded for {n} yet",student.name)}</>}
                   </h2>
                   <p style={{fontSize:14,color:"rgba(255,255,255,.5)",lineHeight:1.8,maxWidth:500,marginBottom:24}}>
                     {subs.length
                       ? `Based on ${subs.length} subject${subs.length===1?"":"s"} and ${student.att.days} day${student.att.days===1?"":"s"} of attendance.`
-                      : "Once marks and attendance are recorded, predictions appear here."}
+                      : t("Once marks and attendance are recorded, predictions appear here.")}
                   </p>
                   <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:14}}>
-                    {[[student.aiScore==null?"—":`${student.aiScore} / 100`,"AI Performance Score",T.gold],
-                      [student.aiScoreLabel,"Academic Standing",T.mint],
-                      [student.rank?`#${student.rank} of ${student.classSize}`:"—","Current Class Rank","#fff"]].map(([v,l,c])=>(
+                    {[[student.aiScore==null?"—":`${student.aiScore} / 100`,t("AI Performance Score"),T.gold],
+                      [student.aiScoreLabel,t("Academic Standing"),T.mint],
+                      [student.rank?`#${student.rank} of ${student.classSize}`:"—",t("Current Class Rank"),"#fff"]].map(([v,l,c])=>(
                       <div key={l} style={{padding:"18px",background:"rgba(255,255,255,.07)",borderRadius:14,border:"1px solid rgba(255,255,255,.08)"}}>
                         <div style={{fontFamily:"Georgia,serif",fontSize:24,fontWeight:800,color:c,marginBottom:5}}>{v}</div>
                         <div style={{fontSize:12,color:"rgba(255,255,255,.4)"}}>{l}</div>
@@ -8476,19 +8494,19 @@ const ParentPortal=({user,db,onLogout,onReload})=>{
           </Crd>
           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:18}}>
             <Crd style={{padding:"24px"}}>
-              <div style={{fontSize:14,fontWeight:700,color:T.ink,marginBottom:16}}>Per-Subject Predictions</div>
+              <div style={{fontSize:14,fontWeight:700,color:T.ink,marginBottom:16}}>{t("Per-Subject Predictions")}</div>
               {student.subjects.map((s,i)=>(
                 <div key={i} style={{display:"flex",alignItems:"center",gap:12,padding:"11px 12px",borderRadius:12,background:T.paper,marginBottom:8,border:`1px solid ${T.border}`}}>
                   <div style={{width:36,height:36,borderRadius:10,background:`${s.color}18`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:11,fontWeight:800,color:s.color,flexShrink:0}}>{s.grade}</div>
                   <div style={{flex:1}}><div style={{fontSize:13,fontWeight:600,color:T.ink}}>{s.name}</div><div style={{fontSize:11,color:T.muted}}>Now: {s.score}%</div></div>
-                  <div style={{textAlign:"right"}}><div style={{fontFamily:"Georgia,serif",fontSize:20,fontWeight:800,color:s.pred>s.score?T.success:T.danger}}>{s.pred}%</div><div style={{fontSize:10,color:T.muted}}>Predicted</div></div>
+                  <div style={{textAlign:"right"}}><div style={{fontFamily:"Georgia,serif",fontSize:20,fontWeight:800,color:s.pred>s.score?T.success:T.danger}}>{s.pred}%</div><div style={{fontSize:10,color:T.muted}}>{t("Predicted")}</div></div>
                   <span style={{fontSize:18,color:s.pred>s.score?T.success:T.danger,fontWeight:700}}>{s.pred>s.score?"↑":"↓"}</span>
                 </div>
               ))}
             </Crd>
             <div style={{display:"flex",flexDirection:"column",gap:14}}>
               <Crd style={{padding:"24px"}}>
-                <div style={{fontSize:14,fontWeight:700,color:T.ink,marginBottom:14}}>Personalized Recommendations</div>
+                <div style={{fontSize:14,fontWeight:700,color:T.ink,marginBottom:14}}>{t("Personalized Recommendations")}</div>
                 {student.aiRecs.map((r,i)=>(
                   <div key={i} style={{padding:"14px",borderRadius:12,background:T.paper,border:`1px solid ${T.border}`,marginBottom:10}}>
                     <div style={{fontSize:11,fontWeight:700,color:T.forest,marginBottom:5,textTransform:"uppercase",letterSpacing:".5px"}}>◈ {r.sub}</div>
@@ -8521,11 +8539,11 @@ const ParentPortal=({user,db,onLogout,onReload})=>{
                 const col=delta>0?T.success:delta<0?T.danger:T.muted;
                 return(
                   <Crd style={{padding:"24px"}}>
-                    <div style={{fontSize:13,fontWeight:700,color:T.ink,marginBottom:4}}>Overall Performance Trend</div>
-                    <div style={{fontSize:11.5,color:T.muted,marginBottom:14}}>Average across all subjects, previous assessment vs current.</div>
+                    <div style={{fontSize:13,fontWeight:700,color:T.ink,marginBottom:4}}>{t("Overall Performance Trend")}</div>
+                    <div style={{fontSize:11.5,color:T.muted,marginBottom:14}}>{t("Average across all subjects, previous assessment vs current.")}</div>
                     <div style={{display:"flex",alignItems:"center",gap:20}}>
                       <div style={{display:"flex",alignItems:"flex-end",gap:14}}>
-                        {[["Previous",prev,T.border],["Current",cur,T.forest]].map(([l,v,c])=>(
+                        {[["Previous",prev,T.border],[t("Current"),cur,T.forest]].map(([l,v,c])=>(
                           <div key={l} style={{textAlign:"center"}}>
                             <div style={{fontSize:10,color:T.muted,marginBottom:4}}>{v}%</div>
                             <div style={{width:34,height:Math.max(4,(v/100)*60),background:c,borderRadius:"4px 4px 0 0"}}/>
@@ -8535,7 +8553,7 @@ const ParentPortal=({user,db,onLogout,onReload})=>{
                       </div>
                       <div>
                         <div style={{fontFamily:"Georgia,serif",fontSize:24,fontWeight:800,color:col}}>{delta>0?"+":""}{delta}%</div>
-                        <div style={{fontSize:12,color:T.muted}}>Change</div>
+                        <div style={{fontSize:12,color:T.muted}}>{t("Change")}</div>
                         <div style={{fontSize:11,color:col,marginTop:4,fontWeight:600}}>
                           {delta>0?"↑ Improving":delta<0?"↓ Slipping":"→ Holding steady"}
                         </div>
@@ -8551,13 +8569,13 @@ const ParentPortal=({user,db,onLogout,onReload})=>{
       {/* MESSAGES */}
       {tab==="messages"&&(
         <div style={{animation:"fadeUp .35s"}}>
-          <SecHead pre="Communication" title="Messages" action={<Btn onClick={()=>setCompose(true)} style={{marginBottom:4}}>+ Compose</Btn>}/>
+          <SecHead pre={t("Communication")} title={t("Messages")} action={<Btn onClick={()=>setCompose(true)} style={{marginBottom:4}}>{t("+ Compose")}</Btn>}/>
           {compose&&<ComposeCard/>}
           <div style={{display:"grid",gridTemplateColumns:"290px 1fr",gap:18,height:500}}>
             <Crd style={{overflow:"hidden",display:"flex",flexDirection:"column"}}>
               <div style={{padding:"14px 18px",borderBottom:`1px solid ${T.border}`,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
                 <div style={{display:"flex",gap:4}}>
-                  {[["inbox","Inbox"],["sent","Sent"]].map(([id,label])=>(
+                  {[["inbox",t("Inbox")],["sent",t("Sent")]].map(([id,label])=>(
                     <span key={id} onClick={()=>{setBox(id);setSelMsg(null);}}
                       style={{fontSize:12,fontWeight:700,padding:"4px 10px",borderRadius:99,cursor:"pointer",
                         color:box===id?T.forest:T.muted,background:box===id?`${T.forest}12`:"transparent"}}>{label}</span>
@@ -8606,14 +8624,14 @@ const ParentPortal=({user,db,onLogout,onReload})=>{
                   {sent&&<div style={{background:`${T.success}12`,color:T.success,padding:"10px 26px",fontSize:13,fontWeight:600,border:`1px solid ${T.success}30`}}>✓ Reply sent successfully</div>}
                   <div style={{padding:"16px 26px",borderTop:`1px solid ${T.border}`,display:"flex",gap:10}}>
                     <input value={reply} onChange={e=>setReply(e.target.value)} onKeyDown={e=>e.key==="Enter"&&sendReply()} placeholder={`Reply to ${selMsg.from}…`} style={{flex:1,background:T.paper,border:`1.5px solid ${T.border}`,borderRadius:10,padding:"10px 16px",color:T.ink,fontSize:13,outline:"none",transition:"border-color .15s"}} onFocus={e=>e.target.style.borderColor=T.forest} onBlur={e=>e.target.style.borderColor=T.border}/>
-                    <Btn onClick={sendReply}>Send</Btn>
+                    <Btn onClick={sendReply}>{t("Send")}</Btn>
                   </div>
                 </>
               ):(
                 <div style={{flex:1,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center"}}>
                   <div style={{fontSize:48,color:T.border,marginBottom:12}}>◎</div>
-                  <div style={{fontFamily:"Georgia,serif",fontSize:18,color:T.muted}}>Select a message</div>
-                  <div style={{fontSize:13,color:T.border,marginTop:6}}>Choose from the inbox on the left</div>
+                  <div style={{fontFamily:"Georgia,serif",fontSize:18,color:T.muted}}>{t("Select a message")}</div>
+                  <div style={{fontSize:13,color:T.border,marginTop:6}}>{t("Choose from the inbox on the left")}</div>
                 </div>
               )}
             </Crd>
@@ -8623,22 +8641,22 @@ const ParentPortal=({user,db,onLogout,onReload})=>{
       {/* FEES */}
       {tab==="fees"&&(
         <div style={{animation:"fadeUp .35s"}}>
-          <SecHead pre="Finance" title="Fee Management"/>
+          <SecHead pre={t("Finance")} title={t("Fee Management")}/>
           {/* Real invoice totals from the server. These were an assumed
               Rs 1,50,000 a year and an invoice count times a literal 12,500,
               so the figures matched no actual invoice. */}
           <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:14,marginBottom:20}}>
-            <KPI label="Invoiced" value={`Rs. ${(student.feeTotals.paid+student.feeTotals.outstanding).toLocaleString()}`} color={T.ink} icon="◑" sub={`${student.fees.length} invoice${student.fees.length===1?"":"s"}`}/>
-            <KPI label="Paid" value={`Rs. ${student.feeTotals.paid.toLocaleString()}`} color={T.success} icon="✓" sub={`${student.fees.filter(f=>f.status==="paid").length} settled`}/>
-            <KPI label="Outstanding" value={`Rs. ${student.feeTotals.outstanding.toLocaleString()}`} color={T.warning} icon="⏳" sub={`${student.fees.filter(f=>f.status!=="paid"&&f.status!=="waived").length} unpaid`}/>
+            <KPI label={t("Invoiced")} value={`Rs. ${(student.feeTotals.paid+student.feeTotals.outstanding).toLocaleString()}`} color={T.ink} icon="◑" sub={tn(student.fees.length===1?"{n} invoice":t("{n} invoices"),student.fees.length)}/>
+            <KPI label={t("Paid")} value={`Rs. ${student.feeTotals.paid.toLocaleString()}`} color={T.success} icon="✓" sub={tn("{n} settled",student.fees.filter(f=>f.status==="paid").length)}/>
+            <KPI label={t("Outstanding")} value={`Rs. ${student.feeTotals.outstanding.toLocaleString()}`} color={T.warning} icon="⏳" sub={tn("{n} unpaid",student.fees.filter(f=>f.status!=="paid"&&f.status!=="waived").length)}/>
           </div>
           <div style={{display:"grid",gridTemplateColumns:"1fr 300px",gap:18}}>
             <Crd style={{padding:"26px"}}>
-              <div style={{fontSize:14,fontWeight:700,color:T.ink,marginBottom:18}}>Payment History</div>
+              <div style={{fontSize:14,fontWeight:700,color:T.ink,marginBottom:18}}>{t("Payment History")}</div>
               <table style={{width:"100%",borderCollapse:"collapse"}}>
-                <thead><tr>{["Month","Amount","Due Date","Paid On","Status",""].map(h=><th key={h} style={{textAlign:"left",padding:"9px 12px",fontSize:11,color:T.muted,fontWeight:700,textTransform:"uppercase",letterSpacing:".7px",borderBottom:`2px solid ${T.border}`}}>{h}</th>)}</tr></thead>
+                <thead><tr>{[t("Month"),t("Amount"),t("Due Date"),t("Paid On"),t("Status"),""].map(h=><th key={h} style={{textAlign:"left",padding:"9px 12px",fontSize:11,color:T.muted,fontWeight:700,textTransform:"uppercase",letterSpacing:".7px",borderBottom:`2px solid ${T.border}`}}>{t(h)}</th>)}</tr></thead>
                 <tbody>{!student.fees.length&&(
-                  <tr><td colSpan={6} style={{padding:"16px 12px",fontSize:13,color:T.muted}}>No invoices have been issued yet.</td></tr>
+                  <tr><td colSpan={6} style={{padding:"16px 12px",fontSize:13,color:T.muted}}>{t("No invoices have been issued yet.")}</td></tr>
                 )}
                 {/* Each invoice carries its own due date — the column was a
                     literal "20th" for every row regardless. An itemised challan
@@ -8654,8 +8672,8 @@ const ParentPortal=({user,db,onLogout,onReload})=>{
                 const unpaid=student.fees.filter(f=>f.status!=="paid"&&f.status!=="waived");
                 if(!unpaid.length) return(
                   <Crd style={{padding:"22px",border:`1.5px solid ${T.success}55`,background:`linear-gradient(135deg,#fff,${T.success}05)`}}>
-                    <div style={{fontSize:10,fontWeight:700,color:T.success,letterSpacing:"1.5px",textTransform:"uppercase",marginBottom:10}}>✓ Nothing Due</div>
-                    <div style={{fontSize:13,color:T.muted,lineHeight:1.7}}>All issued invoices for {student.name} have been settled.</div>
+                    <div style={{fontSize:10,fontWeight:700,color:T.success,letterSpacing:"1.5px",textTransform:"uppercase",marginBottom:10}}>{t("✓ Nothing Due")}</div>
+                    <div style={{fontSize:13,color:T.muted,lineHeight:1.7}}>{tn("All issued invoices for {n} have been settled.",student.name)}</div>
                   </Crd>
                 );
                 const total=unpaid.reduce((s,f)=>s+f.amt,0);
@@ -8674,18 +8692,18 @@ const ParentPortal=({user,db,onLogout,onReload})=>{
                     <Btn out color={T.forest} full onClick={()=>{
                       if(!downloadCsv(stamped(`fees-${student.name.replace(/\W+/g,"-").toLowerCase()}`,"csv"),
                         student.fees.map(f=>({period:f.month,amount:f.amt,status:f.status,due:f.dueDate??"",paid:f.date??"",method:f.method??""})),
-                        [["Period","period"],["Amount (PKR)","amount"],["Status","status"],["Due","due"],["Paid On","paid"],["Method","method"]]))
+                        [["Period","period"],["Amount (PKR)","amount"],[t("Status"),"status"],["Due","due"],[t("Paid On"),"paid"],["Method","method"]]))
                         alert("No invoices to download yet.");
-                    }} style={{padding:"11px",fontSize:13}}>Download Fee Statement</Btn>
+                    }} style={{padding:"11px",fontSize:13}}>{t("Download Fee Statement")}</Btn>
                   </Crd>
                 );
               })()}
               <Crd style={{padding:"22px"}}>
-                <div style={{fontSize:13,fontWeight:700,color:T.ink,marginBottom:4}}>Invoice Amounts</div>
+                <div style={{fontSize:13,fontWeight:700,color:T.ink,marginBottom:4}}>{t("Invoice Amounts")}</div>
                 <div style={{fontSize:11.5,color:T.muted,marginBottom:12,lineHeight:1.6}}>
-                  What the school has billed per period.
+                  {t("What the school has billed per period.")}
                 </div>
-                {!student.fees.length&&<div style={{fontSize:12,color:T.muted}}>Nothing billed yet.</div>}
+                {!student.fees.length&&<div style={{fontSize:12,color:T.muted}}>{t("Nothing billed yet.")}</div>}
                 {student.fees.slice(0,6).map((f,i)=>(
                   <div key={f.id??i} style={{display:"flex",justifyContent:"space-between",padding:"8px 0",borderBottom:`1px solid ${T.border}`}}>
                     <span style={{fontSize:12,color:T.muted}}>{f.month}</span><span style={{fontSize:12,fontWeight:600,color:T.ink}}>Rs. {f.amt.toLocaleString()}</span>
@@ -8699,17 +8717,17 @@ const ParentPortal=({user,db,onLogout,onReload})=>{
       {/* TIMETABLE */}
       {tab==="timetable"&&(
         <div style={{animation:"fadeUp .35s"}}>
-          <SecHead pre="Schedule" title="Class Timetable"/>
+          <SecHead pre={t("Schedule")} title={t("Class Timetable")}/>
           <Crd style={{padding:"26px",overflowX:"auto"}}>
             {!student.timetable.length?(
               <div style={{fontSize:13,color:T.muted,padding:"8px 0",lineHeight:1.7}}>
-                No timetable has been published for {student.grade} {student.section} yet.
+                {tn("No timetable has been published for {n} yet.",`${student.grade} ${student.section}`)}
               </div>
             ):(
               <table style={{width:"100%",borderCollapse:"collapse",minWidth:660}}>
                 <thead>
                   <tr>
-                    <th style={{padding:"10px 16px",textAlign:"left",fontSize:11,color:T.muted,fontWeight:700,textTransform:"uppercase",borderBottom:`2px solid ${T.border}`,width:110}}>Day</th>
+                    <th style={{padding:"10px 16px",textAlign:"left",fontSize:11,color:T.muted,fontWeight:700,textTransform:"uppercase",borderBottom:`2px solid ${T.border}`,width:110}}>{t("Day")}</th>
                     {/* Real period times from the published slots. */}
                     {student.timetablePeriods.map(p=><th key={p.period} style={{padding:"10px 8px",textAlign:"center",fontSize:10,color:T.muted,fontWeight:700,textTransform:"uppercase",letterSpacing:".4px",borderBottom:`2px solid ${T.border}`}}>{p.label}</th>)}
                   </tr>
@@ -8741,14 +8759,14 @@ const ParentPortal=({user,db,onLogout,onReload})=>{
       {/* NOTICES */}
       {tab==="notices"&&(
         <div style={{animation:"fadeUp .35s"}}>
-          <SecHead pre="School" title="Notices & Announcements"/>
+          <SecHead pre={t("School")} title={t("Notices & Announcements")}/>
           <div style={{display:"grid",gridTemplateColumns:"repeat(2,1fr)",gap:16}}>
             {db.notices.filter(n=>n.instId===user.inst).map(n=>(
               <Crd key={n.id} onClick={()=>setSelNotice(selNotice===n.id?null:n.id)} style={{padding:"24px",border:selNotice===n.id?`1.5px solid ${T.forest}55`:`1px solid ${T.border}`,cursor:"pointer",transition:"border-color .15s"}}>
-                <div style={{display:"flex",justifyContent:"space-between",marginBottom:10}}><Bdg label={n.cat} color={catC(n.cat)} bg={`${catC(n.cat)}15`}/><span style={{fontSize:12,color:T.muted}}>{n.date}</span></div>
+                <div style={{display:"flex",justifyContent:"space-between",marginBottom:10}}><Bdg label={t(n.cat)} color={catC(n.cat)} bg={`${catC(n.cat)}15`}/><span style={{fontSize:12,color:T.muted}}>{n.date}</span></div>
                 <div style={{fontFamily:"Georgia,serif",fontSize:16,fontWeight:700,color:T.ink,marginBottom:8,lineHeight:1.3}}>{n.title}</div>
                 {selNotice===n.id?<p style={{fontSize:13,color:T.muted,lineHeight:1.75}}>{n.body}</p>:<p style={{fontSize:13,color:T.muted}}>{n.body.slice(0,65)}…</p>}
-                <div style={{marginTop:10,fontSize:12,color:T.green,fontWeight:600}}>{selNotice===n.id?"▲ Collapse":"▼ Read more"}</div>
+                <div style={{marginTop:10,fontSize:12,color:T.green,fontWeight:600}}>{selNotice===n.id?"▲ Collapse":t("▼ Read more")}</div>
               </Crd>
             ))}
           </div>
@@ -8757,7 +8775,7 @@ const ParentPortal=({user,db,onLogout,onReload})=>{
       {/* PROFILE */}
       {tab==="profile"&&(
         <div style={{animation:"fadeUp .35s"}}>
-          <SecHead pre="Account" title="Student Profile"/>
+          <SecHead pre={t("Account")} title={t("Student Profile")}/>
           <div style={{display:"grid",gridTemplateColumns:"290px 1fr",gap:18}}>
             <div style={{display:"flex",flexDirection:"column",gap:14}}>
               <Crd style={{padding:"28px",textAlign:"center"}}>
@@ -8770,8 +8788,8 @@ const ParentPortal=({user,db,onLogout,onReload})=>{
                 </div>
               </Crd>
               <Crd style={{padding:"22px"}}>
-                <div style={{fontSize:13,fontWeight:700,color:T.ink,marginBottom:12}}>Academic Info</div>
-                {[["Roll No.",student.roll],["Grade",`${student.grade} · ${student.section}`],["Average",`${student.average}%`],["Rank",student.rank?`#${student.rank} of ${student.classSize}`:"Not ranked yet"],["Subjects",String(student.subjects.length)],["AI Score",`${student.aiScore} / 100`]].map(([l,v])=>(
+                <div style={{fontSize:13,fontWeight:700,color:T.ink,marginBottom:12}}>{t("Academic Info")}</div>
+                {[[t("Roll No."),student.roll],[t("Grade"),`${student.grade} · ${student.section}`],[t("Average"),`${student.average}%`],[t("Rank"),student.rank?`#${student.rank} of ${student.classSize}`:t("Not ranked yet")],[t("Subjects"),String(student.subjects.length)],[t("AI Score"),student.aiScore==null?"—":`${student.aiScore} / 100`]].map(([l,v])=>(
                   <div key={l} style={{display:"flex",justifyContent:"space-between",padding:"8px 0",borderBottom:`1px solid ${T.border}`}}>
                     <span style={{fontSize:12,color:T.muted}}>{l}</span><span style={{fontSize:12,fontWeight:600,color:T.ink}}>{v}</span>
                   </div>
@@ -8780,18 +8798,18 @@ const ParentPortal=({user,db,onLogout,onReload})=>{
             </div>
             <div style={{display:"flex",flexDirection:"column",gap:14}}>
               <Crd style={{padding:"26px"}}>
-                <div style={{fontSize:14,fontWeight:700,color:T.ink,marginBottom:18}}>Personal Information</div>
+                <div style={{fontSize:14,fontWeight:700,color:T.ink,marginBottom:18}}>{t("Personal Information")}</div>
                 <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:14}}>
-                  {[["Full Name",student.name],["Date of Birth",student.dob],["Blood Group",student.blood],["Phone",student.phone]].map(([l,v])=>(
+                  {[[t("Full Name"),student.name],[t("Date of Birth"),student.dob],[t("Blood Group"),student.blood],[t("Phone"),student.phone]].map(([l,v])=>(
                     <div key={l}><div style={{fontSize:10,color:T.muted,fontWeight:700,marginBottom:5,textTransform:"uppercase",letterSpacing:".5px"}}>{l}</div><div style={{fontSize:14,color:T.ink,fontWeight:500}}>{v}</div></div>
                   ))}
-                  <div style={{gridColumn:"1/-1"}}><div style={{fontSize:10,color:T.muted,fontWeight:700,marginBottom:5,textTransform:"uppercase",letterSpacing:".5px"}}>Address</div><div style={{fontSize:14,color:T.ink,fontWeight:500}}>{student.address}</div></div>
+                  <div style={{gridColumn:"1/-1"}}><div style={{fontSize:10,color:T.muted,fontWeight:700,marginBottom:5,textTransform:"uppercase",letterSpacing:".5px"}}>{t("Address")}</div><div style={{fontSize:14,color:T.ink,fontWeight:500}}>{student.address}</div></div>
                 </div>
               </Crd>
               <Crd style={{padding:"26px"}}>
-                <div style={{fontSize:14,fontWeight:700,color:T.ink,marginBottom:18}}>Parent / Guardian</div>
+                <div style={{fontSize:14,fontWeight:700,color:T.ink,marginBottom:18}}>{t("Parent / Guardian")}</div>
                 <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:14}}>
-                  {[["Name",parent?.name],["Email",parent?.email],["Phone",parent?.phone],["Relation",parent?.rel]].map(([l,v])=>(
+                  {[[t("Name"),parent?.name],[t("Email"),parent?.email],[t("Phone"),parent?.phone],[t("Relation"),parent?.rel]].map(([l,v])=>(
                     <div key={l}><div style={{fontSize:10,color:T.muted,fontWeight:700,marginBottom:5,textTransform:"uppercase",letterSpacing:".5px"}}>{l}</div><div style={{fontSize:13,color:T.ink,fontWeight:500}}>{v}</div></div>
                   ))}
                 </div>
@@ -8803,14 +8821,14 @@ const ParentPortal=({user,db,onLogout,onReload})=>{
                   states and no handler — nothing a parent clicked did
                   anything, or could have. */}
               <Crd style={{padding:"26px"}}>
-                <div style={{fontSize:14,fontWeight:700,color:T.ink,marginBottom:6}}>Notifications</div>
+                <div style={{fontSize:14,fontWeight:700,color:T.ink,marginBottom:6}}>{t("Notifications")}</div>
                 <p style={{fontSize:12.5,color:T.muted,lineHeight:1.7,marginBottom:14}}>
                   {inst?.name||"Your school"} decides which alerts go out — fee reminders,
                   attendance notices and message emails are configured by the school office.
                   Contact them to change what you receive at <b style={{color:T.ink}}>{parent?.email}</b>.
                 </p>
                 <Btn out color={T.forest} full onClick={()=>{setTab("messages");setCompose(true);}} style={{padding:"10px",fontSize:12.5}}>
-                  Message the school →
+                  {t("Message the school →")}
                 </Btn>
               </Crd>
             </div>
