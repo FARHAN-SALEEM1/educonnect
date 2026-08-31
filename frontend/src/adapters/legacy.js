@@ -128,7 +128,9 @@ const DAY_ABBR = { 0: "Sun", 1: "Mon", 2: "Tue", 3: "Wed", 4: "Thu", 5: "Fri", 6
 
 export const toLegacyWeek = (week = []) =>
   week.map((w) => ({
-    d: w.day || DAY_ABBR[new Date(w.date).getDay()],
+    // getUTCDay, not getDay: `date` is a day stored at midnight UTC, and a
+    // browser behind UTC reads that back as the evening before.
+    d: w.day || DAY_ABBR[new Date(w.date).getUTCDay()],
     s: (w.status || "present").toLowerCase(),
   }));
 

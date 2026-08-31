@@ -401,20 +401,29 @@ export const getStudent = asyncHandler(async (req, res) => {
     .sort((a, b) => new Date(b.takenOn) - new Date(a.takenOn))
     .slice(0, 10);
 
-  // Last 5 records, oldest-first, for the week strip.
+  /**
+   * Last 5 records, oldest-first, for the week strip.
+   *
+   * Read in UTC. `date` is a day, stored at midnight UTC, so asking a server
+   * behind UTC which weekday that is gets the one before: a Thursday register
+   * showed a guardian "Wed". The process is pinned to UTC in the blueprint,
+   * but a label a parent reads should not depend on an env var being right.
+   */
   const weekAttendance = attendance
     .slice(0, 5)
     .reverse()
-    .map((a) => ({ date: a.date, day: DAY_LABELS[new Date(a.date).getDay()], status: a.status }));
+    .map((a) => ({ date: a.date, day: DAY_LABELS[new Date(a.date).getUTCDay()], status: a.status }));
 
   // Present days per month for the last 12 months.
   const monthly = Array.from({ length: 12 }, (c, i) => {
+    // UTC on both sides, for the same reason: a child marked present on the
+    // first of a month was counted into the month before it.
     const d = new Date();
-    d.setMonth(d.getMonth() - (11 - i), 1);
-    const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+    d.setUTCMonth(d.getUTCMonth() - (11 - i), 1);
+    const key = `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}`;
     const inMonth = attendance.filter((a) => {
       const ad = new Date(a.date);
-      return `${ad.getFullYear()}-${String(ad.getMonth() + 1).padStart(2, "0")}` === key;
+      return `${ad.getUTCFullYear()}-${String(ad.getUTCMonth() + 1).padStart(2, "0")}` === key;
     });
     return {
       month: key,

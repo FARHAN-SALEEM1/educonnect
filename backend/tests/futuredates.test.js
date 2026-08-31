@@ -277,3 +277,50 @@ describe("dates that are supposed to point forward still do", () => {
     expect(res.status, res.body.message).toBe(201);
   });
 });
+
+describe("a stored date names its own day, whatever the server is set to", () => {
+  /**
+   * A date is stored at midnight UTC, and both of these read it back with the
+   * process timezone. On a host behind UTC that is the evening before, so a
+   * Thursday register showed a guardian "Wed" and a child marked present on
+   * the first of a month was counted into the month before it. `dates.js`
+   * already says stored dates are UTC midnight, and `isoDayOfWeek` already
+   * reads them with getUTCDay — these two just did not.
+   *
+   * The blueprint pins TZ=UTC now, which would hide this. A label a parent
+   * reads should not depend on an env var being right, so it is asserted here
+   * against a day whose name is not in question.
+   */
+  const THURSDAY = "2026-08-27";
+  const FIRST_OF_MONTH = "2026-08-01";
+
+  it("labels the weekday from the date, not from the host clock", async () => {
+    if (skip()) return;
+    const made = await as(admin)
+      .post("/api/attendance")
+      .send({ studentId: student.id, date: THURSDAY, status: "PRESENT" });
+    expect([201, 409]).toContain(made.status);
+
+    const detail = await as(admin).get(`/api/students/${student.id}`);
+    const row = detail.body.data.attendance.week.find(
+      (w) => new Date(w.date).toISOString().slice(0, 10) === THURSDAY
+    );
+
+    expect(row, "the day it was taken should be in the week strip").toBeTruthy();
+    expect(row.day, "27 August 2026 is a Thursday everywhere").toBe("Thu");
+  });
+
+  it("counts the first of a month into that month", async () => {
+    if (skip()) return;
+    const made = await as(admin)
+      .post("/api/attendance")
+      .send({ studentId: student.id, date: FIRST_OF_MONTH, status: "PRESENT" });
+    expect([201, 409]).toContain(made.status);
+
+    const detail = await as(admin).get(`/api/students/${student.id}`);
+    const august = detail.body.data.attendance.monthly.find((m) => m.month === "2026-08");
+
+    expect(august, "August should be among the twelve months shown").toBeTruthy();
+    expect(august.total, "a register on the 1st belongs to that month").toBeGreaterThan(0);
+  });
+});
