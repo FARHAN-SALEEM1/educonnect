@@ -14,7 +14,16 @@ services:
   - type: web
     name: educonnect-api
     runtime: node
+
+    # ⚠ The free plan SLEEPS after ~15 minutes of no traffic, and the next
+    # request pays roughly 50 seconds of cold start. For trying the deploy
+    # out that is fine. For a school it is not: the first parent to open a
+    # fee reminder in the morning waits out that cold start and concludes
+    # the app is broken. Move to `starter` before any real school touches
+    # it — and note that a sleeping API also makes password-reset links
+    # look dead, which is the worst possible first impression.
     plan: free
+
     region: oregon
     rootDir: backend
 
@@ -39,11 +48,13 @@ services:
 
       # Render generates these — long, random, and different from each other,
       # which is exactly what the production start-up check demands.
+      #
+      # DEFAULT_USER_PASSWORD used to be generated here too. It was removed on
+      # 2026-08-30 because nothing read it: every account is created with a
+      # random `EC-…` password of its own.
       - key: JWT_ACCESS_SECRET
         generateValue: true
       - key: JWT_REFRESH_SECRET
-        generateValue: true
-      - key: DEFAULT_USER_PASSWORD
         generateValue: true
 
       # The API and the static site are different origins on Render, so the
