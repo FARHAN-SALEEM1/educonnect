@@ -87,6 +87,35 @@ const css=`
   @media (max-width:640px){
     /* Everything single-column on a phone. */
     [style*="grid-template-columns"]{grid-template-columns:1fr!important;}
+
+    /* Except rows of small cards. A KPI tile is a word and a number, and
+       stacking four of them costs four screens of scrolling to read four
+       figures. They pair up instead. Declared after the blanket rule above,
+       which is what lets it win.
+
+       minmax(0,1fr) rather than 1fr: a bare 1fr is minmax(auto,1fr), so a card
+       whose longest word is wider than half the row refuses to shrink and the
+       pair overflows a container that clips rather than scrolls. */
+    .ec-pair{grid-template-columns:repeat(2,minmax(0,1fr))!important;}
+
+    /* The landing page sets 64px of side padding, which is a third of a
+       phone's width spent on empty margin — the content was living in 247px
+       of a 375px screen, so everything wrapped hard and the page ran to seven
+       screens. The vertical rhythm is halved with it: 88px between sections
+       is a desktop measure, not a phone one. */
+    [style*="88px 64px"],[style*="80px 64px"]{padding:44px 20px!important;}
+    [style*="96px 64px 88px"]{padding:44px 20px 40px!important;}
+    [style*="36px 64px"]{padding:26px 20px!important;}
+    [style*="14px 64px"]{padding:12px 18px!important;}
+
+    /* A paired KPI tile is about 100px wide once the icon rail has taken its
+       share of a 375px screen, and desktop padding plus a 28px serif does not
+       fit that: the plan name spilled straight out of its card. The tile
+       tightens, and the decorative glyph steps out of the way rather than
+       competing for room it does not earn. */
+    .ec-kpi{padding:14px 12px!important;}
+    .ec-kpi-v{font-size:21px!important;}
+    .ec-kpi-i{display:none!important;}
     /* Fixed-height panes (message inbox) would trap content on mobile. */
     [style*="height:520px"],[style*="height: 520px"]{height:auto!important;}
     main{padding:18px 14px!important;}
@@ -201,8 +230,8 @@ const Av=({name,size=36,bg=T.forest,color="#fff",fs=13,style={}})=>(
 const Bdg=({label,color,bg,style={}})=>(
   <span style={{display:"inline-flex",alignItems:"center",padding:"2px 10px",borderRadius:99,fontSize:11,fontWeight:600,color,background:bg,whiteSpace:"nowrap",...style}}>{label}</span>
 );
-const Crd=({children,style={},onClick})=>(
-  <div onClick={onClick} style={{background:T.card,borderRadius:18,border:`1px solid ${T.border}`,boxShadow:"0 2px 12px rgba(15,23,42,.06)",...style,cursor:onClick?"pointer":undefined}}>{children}</div>
+const Crd=({children,style={},onClick,className})=>(
+  <div className={className} onClick={onClick} style={{background:T.card,borderRadius:18,border:`1px solid ${T.border}`,boxShadow:"0 2px 12px rgba(15,23,42,.06)",...style,cursor:onClick?"pointer":undefined}}>{children}</div>
 );
 /**
  * `style` dresses the wrapper (grid placement, spacing); every other extra prop
@@ -238,14 +267,14 @@ const Btn=({children,onClick,color=T.forest,text="#fff",style={},out,full,disabl
   </button>
 );
 const KPI=({label,value,color,icon,sub})=>(
-  <Crd style={{padding:"20px 22px"}}>
+  <Crd className="ec-kpi" style={{padding:"20px 22px"}}>
     <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}>
       <div>
         <div style={{fontSize:10,fontWeight:700,color:T.muted,textTransform:"uppercase",letterSpacing:"1.2px",marginBottom:6}}>{label}</div>
-        <div style={{fontFamily:"Georgia,serif",fontSize:28,fontWeight:800,color,lineHeight:1}}>{value}</div>
+        <div className="ec-kpi-v" style={{fontFamily:"Georgia,serif",fontSize:28,fontWeight:800,color,lineHeight:1}}>{value}</div>
         {sub&&<div style={{fontSize:11,color:T.muted,marginTop:5}}>{sub}</div>}
       </div>
-      <div style={{fontSize:26,color,opacity:.3,lineHeight:1}}>{icon}</div>
+      <div className="ec-kpi-i" style={{fontSize:26,color,opacity:.3,lineHeight:1}}>{icon}</div>
     </div>
   </Crd>
 );
@@ -2091,7 +2120,7 @@ const StudentImportModal=({onClose,onImported,seatsLeft=null})=>{
             <div style={{fontSize:15,fontWeight:700,color:T.success,marginBottom:8}}>
               Imported {result.imported} student{result.imported===1?"":"s"}
             </div>
-            <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:12}}>
+            <div className="ec-pair" style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:12}}>
               {[["Imported",result.imported],["Guardians created",result.parentsCreated],
                 ["Skipped",result.skipped],["Seats left",result.seatsRemaining]].map(([l,v])=>(
                 <div key={l}>
@@ -3276,7 +3305,7 @@ const ReportCardModal=({studentId,onClose})=>{
 
             {/* The figures a parent reads first — position at the front,
                 because in a Pakistani result card that is the headline. */}
-            <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:10,marginBottom:16}}>
+            <div className="ec-pair" style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:10,marginBottom:16}}>
               {[
                 ["Position",data.rank?`${ordinal(data.rank)}${data.classSize?` of ${data.classSize}`:""}`:"—"],
                 ["Overall Average",data.average!=null?`${data.average}%`:"—"],
@@ -3774,7 +3803,7 @@ const SuperAdmin=({user,db,setDb,onLogout,onReload})=>{
       {tab==="dashboard"&&(
         <div style={{animation:"fadeUp .35s"}}>
           <SecHead pre="Platform Overview" title="Super Admin Dashboard"/>
-          <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:14,marginBottom:22}}>
+          <div className="ec-pair" style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:14,marginBottom:22}}>
             {/* The sub-label used to say "Active schools" under a count of every
                 school, suspended ones included. Both numbers, honestly named. */}
             <KPI label="Institutes" value={insts.length} color={T.blue} icon="🏫"
@@ -3851,7 +3880,7 @@ const SuperAdmin=({user,db,setDb,onLogout,onReload})=>{
                 </div>
                 <span {...pressable(()=>setSelInst(null),"Close institute details")} style={{cursor:"pointer",color:T.muted,fontSize:22}}>×</span>
               </div>
-              <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:12,marginTop:18}}>
+              <div className="ec-pair" style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:12,marginTop:18}}>
                 {[[selInst.students,"Students",T.forest],[selInst.teachers,"Teachers",T.purple],
                   [selInst.status==="active"?"Active":selInst.status.charAt(0).toUpperCase()+selInst.status.slice(1),"Status",selInst.status==="active"?T.success:T.warning],
                   [planById(selInst.plan)?.name,"Plan",T.blue]].map(([v,l,c])=>(
@@ -5112,7 +5141,7 @@ const AdminPortal=({user,db,setDb,onLogout,onReload})=>{
     return(
       <div style={{animation:"fadeUp .35s"}}>
         <SecHead pre="Finance" title="Fee Management"/>
-        <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:14,marginBottom:22}}>
+        <div className="ec-pair" style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:14,marginBottom:22}}>
           <KPI label="Total Invoiced" value={PKR(stats?.totalInvoiced)} color={T.ink} icon="◑" sub="All periods"/>
           <KPI label="Collected" value={PKR(stats?.collected)} color={T.success} icon="✓" sub={`${stats?.collectionRate??0}% collection rate`}/>
           <KPI label="Outstanding" value={PKR(outstanding)} color={T.warning} icon="⏳" sub="Pending + overdue"/>
@@ -6398,7 +6427,7 @@ const AdminPortal=({user,db,setDb,onLogout,onReload})=>{
       {tab==="dashboard"&&(
         <div style={{animation:"fadeUp .35s"}}>
           <SecHead pre={inst.name} title="Admin Dashboard"/>
-          <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:14,marginBottom:22}}>
+          <div className="ec-pair" style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:14,marginBottom:22}}>
             <KPI label="Students" value={seatsUsed} color={T.forest} icon="◈" sub={isUnlimited?"Unlimited":`${studentLimit} limit`}/>
             <KPI label="Teachers" value={inst.teachers} color={T.purple} icon="◉" sub="Active staff"/>
             <KPI label="Parents" value={parents.length} color={T.blue} icon="◎" sub="Registered"/>
@@ -6484,7 +6513,7 @@ const AdminPortal=({user,db,setDb,onLogout,onReload})=>{
                 </div>
                 <span {...pressable(()=>setSelStu(null),"Close student details")} style={{cursor:"pointer",color:T.muted,fontSize:22}}>×</span>
               </div>
-              <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:12,marginBottom:16}}>
+              <div className="ec-pair" style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:12,marginBottom:16}}>
                 {/* Every tile is a real figure from the students endpoint. The
                     fourth used to read a literal "82/100" AI score for every
                     student alike; the list payload carries no insight data, so
@@ -7540,7 +7569,7 @@ const TeacherPortal=({user,db,onLogout,onReload,onUser})=>{
             <h1 style={{fontFamily:"Georgia,serif",fontSize:32,fontWeight:800,color:T.ink}}>{greeting()}, <em style={{color:T.green,fontStyle:"italic"}}>{teacher.name}!</em></h1>
             <p style={{color:T.muted,fontSize:14,marginTop:5}}>You teach {teacher.subject} across {count(teacher.classes.length,"class","classes")}.</p>
           </div>
-          <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:14,marginBottom:22}}>
+          <div className="ec-pair" style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:14,marginBottom:22}}>
             <KPI label="My Classes" value={teacher.classes.length} color={T.forest} icon="▦" sub={teacher.subject}/>
             <KPI label="Students" value={teacher.students} color={T.purple} icon="◈" sub="Total enrolled"/>
             <KPI label="Avg Score" value={`${avgScore}%`} color={T.success} icon="◈" sub="Across your students"/>
@@ -8031,7 +8060,7 @@ const ParentPortal=({user,db,onLogout,onReload})=>{
             <h1 style={{fontFamily:"Georgia,serif",fontSize:34,fontWeight:800,color:T.ink}}>{greeting()}, <em style={{color:T.green,fontStyle:"italic"}}>{parent?.name.split(" ")[0]}.</em></h1>
             <p style={{color:T.muted,fontSize:14,marginTop:5}}>Here's everything about <b>{student.name}</b>'s academic journey.</p>
           </div>
-          <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:14,marginBottom:20}}>
+          <div className="ec-pair" style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:14,marginBottom:20}}>
             <KPI label="Average" value={`${student.average}%`} color={T.forest} icon="◈" sub="Across all subjects"/>
             {/* A child with nothing marked has no position — the same rule the
                 result card applies. Showing "#0 of 5" was the old bug, and
