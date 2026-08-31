@@ -989,6 +989,116 @@ asal kaam hain, andaza nahi — is liye ye **naapa hua** chhor raha hoon, **kiya
 
 ---
 
+## 6u. DEPLOY SE PEHLE POORA AUDIT — 2,000 bachon par (2026-08-31)
+
+User: *"saare app check kro, responsive bnao, har cheez logical honi chahiye, 2000 bachay
+ka data add kro — is test ke baad deploy krdunga."*
+
+`scripts/scale-probe.js --keep --students 2000` se ek poora school bana:
+
+```
+2000 students · 40 teachers · 80 subjects
+16,000 enrolments · 48,000 marks · 120,000 attendance · 6,000 challans   (32 s mein)
+```
+
+### API — sab qaabu mein
+
+```
+GET /dashboard/admin   449 ms      GET /students (page 1)    357 ms
+GET /teachers          343 ms      GET /students/:id/report  251 ms
+baqi sab 250 ms se neeche
+```
+
+### Browser — bhi qaabu mein
+
+```
+2,000 rows ka render      504 ms
+2,000 mein search         67 ms     ("1 student of 2000")
+poora portal load       ~3.6 s      (10 pages, ~4.5 MB JSON, gzip ke baad ~300 KB)
+Academic Report CSV       chal gaya — "2000 students, overall average 69.6%"
+```
+
+Client-side filter ka faisla (section 6s) yahan sabit hua: 2,000 par bhi 67 ms.
+
+### 🔴 Jo mila — teacher ka dashboard sifar dikhata tha
+
+Teacher portal par tazad tha: dashboard ne kaha *"MY CLASSES 1"*, aur My Classes tab ne
+kaha *"You aren't assigned to any classes yet."* Dono API se poocha:
+
+```
+GET /dashboard/teacher    →  classes=0  students=0  subjects=2
+GET /teachers/me/classes  →  rows: 0
+```
+
+Mr. Hassan ke paas 2 subjects aur 4 enrolments hain.
+
+Wajah: dono routes khud ko teacher se scope karte hain, is liye **`scopeToInstitute`
+chalta hi nahi** aur `req.instituteId` undefined rehta hai. Dono ne usi se session maanga.
+**Prisma undefined field ko where se gira deta hai**, to query ban gayi *"kisi bhi institute
+ka pehla current session"*:
+
+```
+readSessionId(undefined)  →  "2026-27" session, school: garrison        ← doosra school
+Hassan ka apna school     →  "2026-27" session, school: Beaconhouse
+
+us ghalat session mein Hassan ke enrolments:  0
+apne session mein:                            4
+```
+
+Ye **ek school wale database par kabhi nahi dikhta** — sirf production mein. Dono callers
+theek kiye, aur zyada kaam ki baat, jar bhi: `currentSession` ab null deta hai jab koi
+school na bataya jaye, taake agla bhoolne wala route kuch na paye — kisi aur ka saal nahi.
+`tests/tenantsession.test.js` ise pin karta hai; paanch mein se teen fix ke baghair fail
+hote hain.
+
+### 🔴 Aur — "koi marks nahi" ko "Excellent" kaha ja raha tha
+
+Parent portal par ek hi screen par:
+
+```
+AVERAGE      0%       Across all subjects
+CLASS RANK   —        No marks recorded yet
+AI SCORE     100/100  Excellent            ← ?
+```
+
+AI score 100 se shuru hota hai aur har concern par kaTta hai. Jis bachay ko kisi ne marka
+hi nahi, uske koi concerns nahi — to 100/100. **Data ka na hona kamaal ban kar dikh raha
+tha**, us sameen ke saamne jo sab se kam jaanch sakta hai. Ab wo bhi "No marks recorded
+yet" kehta hai. Marks wale bachay ka hisaab bilkul waisa hi hai (severity 3 + 2 = 15 kaTa
+→ 85).
+
+### Aur do chhoti cheezein
+
+- **Notices ka koi empty state nahi tha** — sirf heading aur khali jagah.
+- **Teacher profile "1 Classes" kehta tha** — `count()` helper pehle se maujood tha.
+
+### Responsive — jaancha gaya
+
+```
+375px  landing (hero, cards, footer) · admin dashboard · teacher dashboard
+700px  parents table — pinned Actions ke sath
+900px  parents/students tables poore
+1280px koi overflow nahi
+```
+
+### Jo jaan boojh kar nahi badla
+
+- **`docs/original-artifact.jsx`** — asal prototype ka record. Chalta hua code nahi.
+- **Platform MRR = ACTIVE institutes ke plan prices** — school bank transfer se bhi pay
+  kar sakta hai, is liye "Not subscribed" hone par bhi ginna durust hai (comment mein
+  pehle se tay shuda).
+- **Scale-probe ka fee data** theek kiya gaya (PAID challan ab `paidAmount` rakhta hai),
+  kyunke us ke baghair fee screen "48m invoiced, 0 collected" dikhata tha — aisi arithmetic
+  jo asli school kabhi nahi bana sakta, kyunke `payInvoice` hamesha amount likhta hai.
+
+### Frontend ka koi test harness nahi
+
+Backend par 884 tests hain; frontend par sifar. AI-score wala fix adapter ko seedha chala
+kar dono taraf sabit kiya gaya, magar wo CI mein nahi chalta. Ye sab se bara khala hai jo
+is audit mein khula.
+
+---
+
 ## 6t. TEEN CHEEZEIN JO USER NE PAKRIN (2026-08-31)
 
 ### 🔴 1. "Parent delete pe click hi nahi hota"

@@ -126,11 +126,11 @@ const css=`
  * misrepresentation. When one of those is genuinely built, add it back.
  */
 const PLANS = [
-  {id:"starter", name:"Starter",  price:4999,  maxStudents:200,  color:T.blue,
+  {id:"starter", name:"Starter",  price:29999,  maxStudents:200,  color:T.blue,
    features:["Up to 200 students","Attendance tracking","Fee management","Parent & Teacher portals","Reports & CSV exports","Email support"]},
-  {id:"growth",  name:"Growth",   price:12999, maxStudents:800,  color:T.forest, popular:true,
+  {id:"growth",  name:"Growth",   price:49999, maxStudents:800,  color:T.forest, popular:true,
    features:["Up to 800 students","Everything in Starter","Performance insights","Advanced fee management","Bulk student import","Priority support"]},
-  {id:"elite",   name:"Elite",    price:29999, maxStudents:9999, color:T.purple,
+  {id:"elite",   name:"Elite",    price:79999, maxStudents:9999, color:T.purple,
    features:["Unlimited students","Everything in Growth","Full insight suite","Institute logo & colours","Dedicated account manager"]},
 ];
 

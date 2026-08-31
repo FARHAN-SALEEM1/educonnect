@@ -82,7 +82,7 @@ const PLANS = [
   {
     id: "starter",
     name: "Starter",
-    price: 4999,
+    price: 29999,
     maxStudents: 200,
     color: T.blue,
     // Only features that exist. SMS, API access, multi-branch, white-label
@@ -95,7 +95,7 @@ const PLANS = [
   {
     id: "growth",
     name: "Growth",
-    price: 12999,
+    price: 49999,
     maxStudents: 800,
     color: T.forest,
     popular: true,
@@ -107,7 +107,7 @@ const PLANS = [
   {
     id: "elite",
     name: "Elite",
-    price: 29999,
+    price: 79999,
     maxStudents: 9999,
     color: T.purple,
     features: [
