@@ -279,3 +279,68 @@ describe("a production build ships no demo credentials", () => {
     expect(src).toMatch(/import\.meta\.env\.DEV/);
   });
 });
+
+/**
+ * The seed cannot run in production — that is what everything above proves.
+ * It closes one route to demo credentials being live. It does not close the
+ * likely one: wanting data to demonstrate, taking a dump of development, and
+ * restoring it into production. A restore does not know what it carries, and
+ * the result is `sa@educonnect.io / super123` — a super admin over every
+ * institute, password printed in the README — reachable from the internet.
+ *
+ * So the server checks the state as well as the route, before it serves
+ * anything. These run it against the developer's own database, which is
+ * exactly the database that would be dumped.
+ */
+describe("production refuses to serve demo credentials", () => {
+  /** Runs the guard in a child process with a production-shaped environment. */
+  const check = async (env = {}) => {
+    try {
+      const { stdout, stderr } = await run(
+        process.execPath,
+        ["-e", "import('./src/config/demo-guard.js').then(m => m.assertNoDemoAccounts()).then(() => console.log('ALLOWED'))"],
+        {
+          cwd: BACKEND,
+          env: {
+            ...process.env,
+            NODE_ENV: "production",
+            CORS_ORIGIN: "https://school.example.com",
+            APP_URL: "https://school.example.com",
+            SMTP_HOST: "smtp.example.com",
+            SMTP_FROM: "EduConnect <no-reply@example.com>",
+            JWT_ACCESS_SECRET: "a".repeat(48),
+            JWT_REFRESH_SECRET: "b".repeat(48),
+            PAYMENT_PROVIDER: "manual",
+            SAFEPAY_CAPTURE_WEBHOOKS: "",
+            ...env,
+          },
+        }
+      );
+      return { allowed: `${stdout}`.includes("ALLOWED"), output: `${stdout}${stderr}` };
+    } catch (err) {
+      return { allowed: false, output: `${err.stdout ?? ""}${err.stderr ?? ""}` };
+    }
+  };
+
+  it("refuses, and names the accounts it found", async () => {
+    const { allowed, output } = await check();
+
+    expect(allowed, "a database full of demo logins was allowed to serve production").toBe(false);
+    expect(output).toMatch(/still holds demo credentials/i);
+    expect(output).toContain("sa@educonnect.io");
+    expect(output).toMatch(/SUPERADMIN/);
+  });
+
+  it("says what to do about it, including where it probably came from", async () => {
+    const { output } = await check();
+
+    expect(output).toMatch(/delete these accounts, or give them real passwords/i);
+    expect(output).toMatch(/development dump/i);
+  });
+
+  it("leaves development alone — the demo data is the point there", async () => {
+    const { allowed } = await check({ NODE_ENV: "development" });
+
+    expect(allowed, "the guard must not fire outside production").toBe(true);
+  });
+});

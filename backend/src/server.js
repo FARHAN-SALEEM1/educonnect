@@ -2,10 +2,17 @@ import app from "./app.js";
 import { env } from "./config/env.js";
 import { connectDatabase, disconnectDatabase } from "./config/prisma.js";
 import { startMaintenance } from "./services/maintenance.service.js";
+import { assertNoDemoAccounts } from "./config/demo-guard.js";
 
 const start = async () => {
   try {
     await connectDatabase();
+
+    // Config is checked before this file even loads; this is the check that
+    // needs the database, so it happens here — after connecting and before a
+    // single request is served.
+    await assertNoDemoAccounts();
+
     startMaintenance();
 
     const server = app.listen(env.port, () => {

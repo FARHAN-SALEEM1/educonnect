@@ -185,7 +185,7 @@ educonnect direct app/
 
 ## 2. CURRENT PROJECT STATE
 
-- **Tests:** **872/872 pass, 55 test files** (2026-08-30)
+- **Tests:** **875/875 pass, 55 test files** (2026-08-30)
 - **Build:** clean, `519.02 kB` (gzip 135.39 kB)
 - **Git:** **2026-08-30 ko pehli dafa commit aur push hua** — branch `deploy-prep`,
   159 files, +35,092 / −1,066. Us se pehle repo mein sirf ek commit tha aur poori
@@ -3921,7 +3921,7 @@ hoti hai.
 
 **Foran (koi external dependency nahi):**
 1. Servers chalao: `preview_start {name:"backend"}` aur `{name:"frontend"}`
-2. Baseline verify karo: `npm test` (**872** expected) + `cd frontend && npm run check:csv` (23 expected)
+2. Baseline verify karo: `npm test` (**875** expected) + `cd frontend && npm run check:csv` (23 expected)
    + `node scripts/fix-timetable-conflicts.js` (0 conflicts expected — magar `--apply` mat chalana)
 
 **Safepay — webhook path CLOSED hai; ye sirf dobara chalane ke liye:**
@@ -4041,7 +4041,7 @@ din lete hain), `reportcard` (raw queries mein soft-delete filter), `errorhandle
 
 ## 13. TESTS
 
-**872 tests, 55 files, sab pass. Build clean.**
+**875 tests, 55 files, sab pass. Build clean.**
 
 ### Suite ki raftaar — naapa hua, andaza nahi (2026-08-29)
 
@@ -4117,12 +4117,12 @@ foreach ($p in 5001,5173,4040) {
 }
 ```
 
-> Per-file counts ka jorr theek **872** banta hai. Base 2026-08-29 ke
+> Per-file counts ka jorr theek **875** banta hai. Base 2026-08-29 ke
 > `vitest --reporter=json` se aaya, phir 2026-08-30 ki tabdeeliyan adjust ki gayin:
 > **nau nayi files** (`futuredates` 11, `overdue` 6, `subjectdelete` 6,
 > `removedstudent` 9, `removedteacher` 7, `deletedrolls` 6, `teacherworkload` 7,
 > `platformrevenue` 5, `rankagreement` 7), `import` +7, aur **33 files mein**
-> **ek-ek vacuity guard** (section 6n). Jorr ka theek 872 nikalna khud saboot hai
+> **ek-ek vacuity guard** (section 6n). Jorr ka theek 875 nikalna khud saboot hai
 > ke baqi koi file nahi badli.
 
 ```
@@ -4133,7 +4133,7 @@ futuredates 11 · gradingpolicy 21 · gradingreach 13 · import 23 · instituteb
 messaging 14 · notices 18 · notificationgating 6 · onboarding 10 · overdue 6
 partialpayments 18 · passwordreset 13 · platformrevenue 5 · promotion 15 · promotionenrolment 15
 rankagreement 7 · ratelimit 20 · refreshtoken 13 · removedstudent 9 · removedteacher 7
-reportcard 17 · safepay 53 · scorereconcile 12 · security 14 · seedguard 17
+reportcard 17 · safepay 53 · scorereconcile 12 · security 14 · seedguard 20
 siblings 14 · smtpdelivery 16 · softdelete 10 · subjectdelete 6 · subscription 18
 teacherworkload 7 · tenancy 30 · terms 13 · timetablefix 14 · tokenreuse 13
 twosessions 21 · validation 7 · validationparity 7 · weightedterms 19
@@ -4363,7 +4363,7 @@ cloudflared tunnel --url http://localhost:5001
 - **Blind scripted/coordinate clicking mat karo.** Browser pane ka coordinate frame shift hota rehta hai. Har click se pehle screenshot lo aur target visually confirm karo. Agar screenshot na mile to `read_page` refs ya DOM query se target confirm karo; ambiguous ho to ruk jao aur API/code-level verification karo
 - **Unrelated changes mat karo.** Sirf wahi chhoo jo task maangta hai
 - **Jo verify nahi hua usay "verified" mat likho.** Honesty > completeness
-- **Test baseline preserve karo** — 872/872. Existing tests weaken ya remove mat karo
+- **Test baseline preserve karo** — 875/875. Existing tests weaken ya remove mat karo
 - **Webhook claim ko nakaami par release karo.** `claimEvent` ke baad jo bhi kaam ho,
   agar wo throw kare to `releaseEvent()` chalna chahiye — warna gateway ka retry
   "already processed" sun kar chala jata hai aur payment hamesha ke liye gum.
@@ -4477,7 +4477,7 @@ cloudflared tunnel --url http://localhost:5001
 **State stable hai. Koi kaam adhoora nahi chhoda gaya.**
 
 ```
-tests   872/872, 55 files          build   clean, 519 kB (gzip 135)
+tests   875/875, 55 files          build   clean, 519 kB (gzip 135)
 git     branch deploy-prep pushed  DB      3 demo schools (INS001-003)
 score   6 agrees · 7 disagrees · 11 no-marks    + user ke 2 (INS004, INS005)
         ↑ ye data chhuna MANA hai — section 5h
@@ -4500,7 +4500,7 @@ score   6 agrees · 7 disagrees · 11 no-marks    + user ke 2 (INS004, INS005)
    Ek dafa `access.test.js` ka ek test 544 second le kar timeout bhi hua tha (akela wo
    0.3s ka hai). Suite mein koi guard nahi jo isay pakde. Ports se confirm karein:
    `5001`, `5173`, `4040`.
-3. **Baseline confirm karein** — `npm test` → **872**, aur `node scripts/inspect-scores.js`
+3. **Baseline confirm karein** — `npm test` → **875**, aur `node scripts/inspect-scores.js`
    → **6 · 7 · 11**.
 
 ### Aakhri kaam (2026-08-30) — logical bug hunt
@@ -4541,6 +4541,17 @@ Ek hi din mein kaafi kuch hua — har ek ka apna section hai:
 
 ### Launch ke liye kahan khare hain (2026-08-30)
 
+> **Demo credentials ab production tak pohnch hi nahi saktin.** Seed pehle se
+> production mein block tha, magar wo sirf **ek raasta** band karta tha. Asli
+> khatra doosra hai: demo dikhane ke liye dev ka dump production mein restore
+> kar dena — restore ko pata hi nahi hota wo kya utha kar la raha hai, aur
+> natija `sa@educonnect.io / super123` internet par. Ab server **halat** check
+> karta hai, sirf raasta nahi: production mein koi seeded login mile, ya koi
+> SUPERADMIN un chaar documented passwords mein se koi istemal kar raha ho, to
+> pehli request serve karne se pehle inkar kar deta hai
+> (`src/config/demo-guard.js`). Development bilkul waise ka waisa — wahan demo
+> data hi to maqsad hai.
+
 User ne poocha *"ab ye launch karne ke qaabil hai?"* — jawab **abhi nahi**,
 aur wajah code nahi, **operations** hain. Us din do rukawaten hat gayin:
 
@@ -4548,7 +4559,7 @@ aur wajah code nahi, **operations** hain. Us din do rukawaten hat gayin:
 |---|---|
 | **Step 1 — SMTP** | ✅ **ho gaya.** Asli email asli inbox mein pohnchi, aur asli reset flow chala. Section 6k |
 | **Step 2 — backup/restore** | ✅ **ho gaya.** Dump restore ho kar wahi fingerprint deta hai. Section 6p |
-| **Step 3 — deploy** | ❌ kabhi nahi hua. Koi host, domain, TLS ya production DB nahi. Ek hi commit hai, wo bhi purana |
+| **Step 3 — deploy** | ⏳ **shuru ho gaya.** Code `deploy-prep` branch par push ho gaya (pehli dafa), Render blueprint durust kiya, aur production ab demo credentials ke sath start hi nahi hoti. Baqi: host, domain, TLS |
 | **Step 4 — payments** | ❌ asli subscription kabhi bani hi nahi (Safepay sandbox reCAPTCHA). Aur ye sawal khula hai ke payload `reference` laata hai ya nahi — **uske baghair koi payment kisi school se bind nahi hoti** |
 
 Production config guard ab **sirf domain** par rukta hai — `CORS_ORIGIN` aur

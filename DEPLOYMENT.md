@@ -333,7 +333,11 @@ field list that omits it.
 **Security**
 
 - [ ] Fresh 48-byte secrets, different from each other
-- [ ] Every demo account deleted or repasworded
+- [ ] Every demo account deleted or repassworded — **the server enforces this**:
+      in production it refuses to start if it finds any seeded login, or a super
+      admin still using one of the four documented passwords. The likely way they
+      arrive is a development dump restored into production, which nothing else
+      would have caught
 - [ ] `CORS_ORIGIN` set to your real domain — not `*`
 - [ ] HTTPS everywhere; `APP_URL` uses `https://`
 - [ ] `NODE_ENV=production` (this also hides stack traces from error responses)
