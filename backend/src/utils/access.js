@@ -74,3 +74,28 @@ export async function findAccessibleSubject(req, subjectId) {
   if (!subject) throw ApiError.notFound("Subject not found or not assigned to you");
   return subject;
 }
+
+/**
+ * A campus the caller's own school actually runs.
+ *
+ * `branchId` arrives in the body of four write paths, and every one of them
+ * spread it straight into Prisma. Prisma only asks whether the branch row
+ * exists — not whose it is — so one school could admit a child onto another
+ * school's campus. Nobody could *read* the child across the tenant boundary,
+ * but the other school's campus card counts its own students with a nested
+ * `_count` that no institute filter reaches, so their headcount quietly grew
+ * by a pupil they had never enrolled. Closing that campus would then have
+ * written to the first school's row.
+ *
+ * Null clears the assignment and needs no check. Anything else must belong
+ * here, and a 400 rather than a 404 because the id came in a body field the
+ * caller chose, exactly like `parentId` above it.
+ */
+export async function assertBranchInInstitute(branchId, instituteId) {
+  if (!branchId) return;
+  const branch = await prisma.branch.findFirst({
+    where: { id: branchId, instituteId, deletedAt: null },
+    select: { id: true },
+  });
+  if (!branch) throw ApiError.badRequest("Selected campus does not belong to this institute");
+}

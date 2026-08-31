@@ -274,6 +274,48 @@ describe("one school's campuses are not another's", () => {
     expect(still.branchId).not.toBe(glb);
   });
 
+  it("cannot park its own student on one", async () => {
+    if (skip()) return;
+    const glb = (await as(admin).get("/api/branches")).body.data.find((b) => b.code === "GLB").id;
+    const before = (await as(admin).get("/api/branches")).body.data.find((b) => b.code === "GLB").studentCount;
+
+    const res = await as(other)
+      .post("/api/students")
+      .send({ name: "Trespasser", grade: "Grade 9", section: "A", rollNo: `TR-${stamp}`, branchId: glb });
+
+    expect(res.status, "a campus it cannot see is not a campus it can fill").toBe(400);
+
+    const after = (await as(admin).get("/api/branches")).body.data.find((b) => b.code === "GLB");
+    expect(after.studentCount, "and no foreign headcount lands on the card").toBe(before);
+  });
+
+  it("cannot move an existing student onto one by editing them", async () => {
+    if (skip()) return;
+    const glb = (await as(admin).get("/api/branches")).body.data.find((b) => b.code === "GLB").id;
+    const made = await as(other)
+      .post("/api/students")
+      .send({ name: "Edit Trespasser", grade: "Grade 9", section: "A", rollNo: `ET-${stamp}` });
+
+    const res = await as(other).patch(`/api/students/${made.body.data.id}`).send({ branchId: glb });
+
+    expect(res.status).toBe(400);
+    const still = await prismaRaw.student.findUnique({
+      where: { id: made.body.data.id },
+      select: { branchId: true },
+    });
+    expect(still.branchId).toBeNull();
+  });
+
+  it("cannot post its teachers to one either", async () => {
+    if (skip()) return;
+    const glb = (await as(admin).get("/api/branches")).body.data.find((b) => b.code === "GLB").id;
+
+    const res = await as(other)
+      .post("/api/teachers")
+      .send({ name: "Trespass Sir", email: `trespass.${stamp}@test.edu`, branchId: glb });
+
+    expect(res.status).toBe(400);
+  });
   it("cannot reach another school's students through its own campus", async () => {
     if (skip()) return;
     const theirs = await as(other).post("/api/branches").send({ name: "Their Campus", code: "THR" });

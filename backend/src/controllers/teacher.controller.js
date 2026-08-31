@@ -9,6 +9,7 @@ import { hashPassword } from "../utils/password.js";
 import { audit } from "../utils/audit.js";
 import { sendWelcome, notSent, undeliveredReason } from "../services/email.service.js";
 import { notificationEnabled } from "../utils/notifications.js";
+import { assertBranchInInstitute } from "../utils/access.js";
 import { attendanceSummary, averageScore } from "../utils/academics.js";
 import { policyFor } from "../services/grading.service.js";
 import { liveEnrolmentFilter, readSessionId, sessionFilter } from "../services/session.service.js";
@@ -247,6 +248,8 @@ export const createTeacher = asyncHandler(async (req, res) => {
   const existing = await prisma.user.findUnique({ where: { email: data.email } });
   if (existing && createLogin) throw ApiError.conflict("A user with this email already exists");
 
+  await assertBranchInInstitute(data.branchId, instituteId);
+
   const code = await nextTeacherCode(instituteId);
   const tempPassword = password || `EC-${crypto.randomBytes(4).toString("hex")}`;
 
@@ -328,6 +331,8 @@ export const updateTeacher = asyncHandler(async (req, res) => {
   if (!existing) throw ApiError.notFound("Teacher not found");
 
   const { subjectIds, password, instituteId: _ignored, ...data } = req.body;
+
+  await assertBranchInInstitute(data.branchId, existing.instituteId);
 
   const teacher = await prisma.$transaction(async (tx) => {
     const record = await tx.teacher.update({ where: { id: existing.id }, data });

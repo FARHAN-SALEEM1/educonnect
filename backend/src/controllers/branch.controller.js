@@ -136,9 +136,14 @@ export const deleteBranch = asyncHandler(async (req, res) => {
 
   const moved = { students: branch._count.students, teachers: branch._count.teachers };
 
+  // Scoped by institute as well as branch. Nothing outside this school can
+  // carry the id — `assertBranchInInstitute` refuses to write one — but this
+  // is the statement that would do the damage if that ever stopped holding,
+  // so it states the invariant itself rather than trusting a guard elsewhere.
+  const on = { branchId: branch.id, instituteId: branch.instituteId };
   await prismaRaw.$transaction(async (tx) => {
-    await tx.student.updateMany({ where: { branchId: branch.id }, data: { branchId: null } });
-    await tx.teacher.updateMany({ where: { branchId: branch.id }, data: { branchId: null } });
+    await tx.student.updateMany({ where: on, data: { branchId: null } });
+    await tx.teacher.updateMany({ where: on, data: { branchId: null } });
     await tx.branch.update({ where: { id: branch.id }, data: { deletedAt: new Date() } });
   });
 

@@ -4,7 +4,7 @@ import { asyncHandler } from "../utils/asyncHandler.js";
 import { created, ok, paginate, pageMeta } from "../utils/response.js";
 import { nextStudentCode, reserveCodes } from "../utils/codes.js";
 import { audit } from "../utils/audit.js";
-import { findAccessibleStudent, studentScopeWhere } from "../utils/access.js";
+import { assertBranchInInstitute, findAccessibleStudent, studentScopeWhere } from "../utils/access.js";
 import { spellingProblem, spellings } from "../utils/classNames.js";
 import { policyFor } from "../services/grading.service.js";
 import { PLAN_PUBLIC } from "../utils/publicFields.js";
@@ -520,6 +520,8 @@ export const createStudent = asyncHandler(async (req, res) => {
     if (!parent) throw ApiError.badRequest("Selected parent does not belong to this institute");
   }
 
+  await assertBranchInInstitute(data.branchId, instituteId);
+
   const code = await nextStudentCode(instituteId);
 
   const student = await prisma.student.create({
@@ -787,6 +789,8 @@ export const updateStudent = asyncHandler(async (req, res) => {
     });
     if (!parent) throw ApiError.badRequest("Selected parent does not belong to this institute");
   }
+
+  await assertBranchInInstitute(data.branchId, current.instituteId);
 
   const student = await prisma.student.update({
     where: { id: req.params.id },
