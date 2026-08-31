@@ -332,7 +332,8 @@ export const teacherDashboard = asyncHandler(async (req, res) => {
 
   const today = todayIn(await zoneFor(req.user.instituteId));
 
-  const sessionId = await readSessionId(req.instituteId);
+  // This route has no scopeToInstitute, so req.instituteId is undefined here.
+  const sessionId = await readSessionId(req.user.instituteId);
 
   const teacher = await prisma.teacher.findUnique({
     where: { id: req.user.teacherId },

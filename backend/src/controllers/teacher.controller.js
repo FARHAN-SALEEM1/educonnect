@@ -149,7 +149,8 @@ export const myClasses = asyncHandler(async (req, res) => {
   const grading = await policyFor(req.user.instituteId);
   if (!req.user.teacherId) throw ApiError.forbidden("No teacher profile linked to your account");
 
-  const rosterSessionId = await readSessionId(req.instituteId);
+  // Same reason as the policy above: this route never runs scopeToInstitute.
+  const rosterSessionId = await readSessionId(req.user.instituteId);
 
   const subjects = await prisma.subject.findMany({
     where: { teacherId: req.user.teacherId },

@@ -6807,7 +6807,6 @@ const AdminPortal=({user,db,setDb,onLogout,onReload})=>{
                 <div style={{display:"flex",gap:8,alignItems:"center"}}>
                   <span {...pressable(()=>setEditNotice(n),`Edit notice: ${n.title}`)}
                     style={{cursor:"pointer"}}>
-          onPurged={name=>{setPNote(`${name} deleted permanently.`);onReload?.();}}
                     <Bdg label="Edit" color={T.forest} bg={`${T.forest}15`}/>
                   </span>
                   <span {...pressable(()=>removeNotice(n),`Delete notice: ${n.title}`,{disabled:noticeBusy===n.id})}
@@ -6818,6 +6817,16 @@ const AdminPortal=({user,db,setDb,onLogout,onReload})=>{
               </Crd>
             ))}
           </div>
+          {!notices.length&&(
+            <Crd style={{padding:"44px 26px",textAlign:"center"}}>
+              <div style={{fontSize:26,color:T.border,marginBottom:10}}>✉</div>
+              <div style={{fontFamily:"Georgia,serif",fontSize:18,fontWeight:700,color:T.ink,marginBottom:6}}>No notices yet</div>
+              <div style={{fontSize:13,color:T.muted,lineHeight:1.7,maxWidth:420,margin:"0 auto"}}>
+                A notice reaches every parent and teacher in the school at once — a holiday,
+                a fee deadline, a parent-teacher meeting. Post one to get started.
+              </div>
+            </Crd>
+          )}
         </div>
       )}
       {/* REPORTS */}
@@ -6847,6 +6856,7 @@ const AdminPortal=({user,db,setDb,onLogout,onReload})=>{
           initialKind={bin}
           onClose={()=>setBin(null)}
           onRestored={name=>{setPNote(`${name} restored.`);onReload?.();}}
+          onPurged={name=>{setPNote(`${name} deleted permanently.`);onReload?.();}}
         />
       )}
       {modal==="import"&&(

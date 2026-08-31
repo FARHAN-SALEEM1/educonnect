@@ -104,8 +104,21 @@ export const listSessions = (instituteId) =>
  * — it is how the product behaved before sessions existed, and the callers fall
  * back to reading every year exactly as they used to.
  */
-export const currentSession = (instituteId) =>
-  prisma.academicSession.findFirst({ where: { instituteId, isCurrent: true } });
+export const currentSession = (instituteId) => {
+  /**
+   * No school, no session — and never somebody else's.
+   *
+   * Prisma drops an `undefined` field from a where clause rather than
+   * matching on it, so `{ instituteId: undefined, isCurrent: true }` asks for
+   * the first current session of *any* institute in the database. On a route
+   * that never ran scopeToInstitute that is exactly what happened: a teacher's
+   * enrolments were filtered against another school's academic year, matched
+   * nothing, and every teacher dashboard reported zero students. It only
+   * shows up once a second school exists, which is to say only in production.
+   */
+  if (!instituteId) return Promise.resolve(null);
+  return prisma.academicSession.findFirst({ where: { instituteId, isCurrent: true } });
+};
 
 /**
  * The `where` clause for one session, or nothing at all.

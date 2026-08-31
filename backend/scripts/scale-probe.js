@@ -23,7 +23,13 @@ const stamp = Date.now();
 /** A mid-size private school: 40 classes of ~30. */
 const GRADES = ["Grade 1","Grade 2","Grade 3","Grade 4","Grade 5","Grade 6","Grade 7","Grade 8","Grade 9","Grade 10"];
 const SECTIONS = ["A","B","C","D"];
-const PER_SECTION = 30;
+/** --students N sizes the school; the default is a mid-size 1,200. */
+const WANTED = (() => {
+  const i = process.argv.indexOf("--students");
+  const n = i === -1 ? NaN : Number(process.argv[i + 1]);
+  return Number.isFinite(n) && n > 0 ? n : null;
+})();
+const PER_SECTION = WANTED ? Math.ceil(WANTED / (GRADES.length * SECTIONS.length)) : 30;
 const SUBJECTS_PER_CLASS = 8;
 const SCHOOL_DAYS = 60;
 const FEE_MONTHS = 3;
@@ -203,6 +209,11 @@ const main = async () => {
   const feeRows = [];
   for (let m = 0; m < FEE_MONTHS; m += 1) {
     for (const st of students) {
+      // A settled challan carries what was actually received. Leaving
+      // paidAmount null while calling it PAID gave the fee screen 48m
+      // invoiced, 0 collected and a 0% rate — an arithmetic that no real
+      // school could produce, because payInvoice always writes the amount.
+      const paid = Math.random() < 0.8;
       feeRows.push({
         instituteId: institute.id,
         studentId: st.id,
@@ -210,7 +221,12 @@ const main = async () => {
         title: `Monthly Fee`,
         amount: 8000,
         dueDate: new Date(Date.UTC(2026, 4 + m, 10)),
-        status: Math.random() < 0.8 ? "PAID" : "PENDING",
+        status: paid ? "PAID" : "PENDING",
+        ...(paid && {
+          paidAmount: 8000,
+          paidAt: new Date(Date.UTC(2026, 4 + m, 8)),
+          method: "CASH",
+        }),
       });
     }
   }
