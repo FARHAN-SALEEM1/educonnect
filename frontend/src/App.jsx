@@ -1141,7 +1141,12 @@ const useHashTab=(fallback,valid)=>{
  * sit in the bar; the rest, and the way out, live behind More, because a bar
  * with nine targets in it is a bar nobody can hit.
  */
-const BottomNav=({nav,tab,setTab,user,inst,onLogout})=>{
+/**
+ * `moreLabel` and `logoutLabel` arrive as props because this bar is shared by
+ * all four portals, and only the parent portal is translated. Calling t() here
+ * would put Urdu in front of an admin who happens to use the same phone.
+ */
+const BottomNav=({nav,tab,setTab,user,inst,onLogout,moreLabel="More",logoutLabel="Log out"})=>{
   const[more,setMore]=useState(false);
   const primary=nav.slice(0,4);
   const rest=nav.slice(4);
@@ -1177,10 +1182,10 @@ const BottomNav=({nav,tab,setTab,user,inst,onLogout})=>{
               <Item key={n.id} n={n} active={tab===n.id} onPick={()=>{setMore(false);setTab(n.id);}}/>
             ))}
           </div>
-          <div {...pressable(()=>{setMore(false);onLogout?.();},"Log out")}
+          <div {...pressable(()=>{setMore(false);onLogout?.();},logoutLabel)}
             style={{marginTop:14,padding:"12px",borderRadius:12,border:`1px solid ${T.border}`,
               textAlign:"center",fontSize:13,fontWeight:600,color:T.danger,cursor:"pointer"}}>
-            Log out
+            {logoutLabel}
           </div>
         </div>
       )}
@@ -1194,14 +1199,14 @@ const BottomNav=({nav,tab,setTab,user,inst,onLogout})=>{
         {/* Always drawn, even with nothing extra to hold: this is where Log out
             lives, and a portal with four screens would otherwise strand a phone
             with no way out. */}
-        <Item n={{id:"__more",label:"More",icon:"⋯"}} active={more||(restHoldsTab&&!more)}
+        <Item n={{id:"__more",label:moreLabel,icon:"⋯"}} active={more||(restHoldsTab&&!more)}
           onPick={()=>setMore(m=>!m)}/>
       </nav>
     </>
   );
 };
 
-const Shell=({nav,tab,setTab,user,inst,collapsed,setCollapsed,onLogout,children})=>{
+const Shell=({nav,tab,setTab,user,inst,collapsed,setCollapsed,onLogout,children,moreLabel,logoutLabel})=>{
   const narrow=useMediaQuery("(max-width: 900px)");
   // Below 900px the sidebar is always icons-only, so content keeps its room.
   const isCollapsed=collapsed||narrow;
@@ -1234,7 +1239,8 @@ const Shell=({nav,tab,setTab,user,inst,collapsed,setCollapsed,onLogout,children}
         <div className="ec-page" style={{padding:"28px 34px"}}>{children}</div>
       </main>
       {phone&&(
-        <BottomNav nav={nav} tab={tab} setTab={setTab} user={user} inst={inst} onLogout={onLogout}/>
+        <BottomNav nav={nav} tab={tab} setTab={setTab} user={user} inst={inst} onLogout={onLogout}
+          moreLabel={moreLabel} logoutLabel={logoutLabel}/>
       )}
     </div>
   );
@@ -8148,7 +8154,8 @@ const ParentPortal=({user,db,onLogout,onReload})=>{
   };
 
   return(
-    <Shell nav={nav} tab={tab} setTab={setTab} user={user} inst={inst} collapsed={col} setCollapsed={setCol} onLogout={onLogout}>
+    <Shell nav={nav} tab={tab} setTab={setTab} user={user} inst={inst} collapsed={col} setCollapsed={setCol} onLogout={onLogout}
+      moreLabel={t("More")} logoutLabel={t("Log out")}>
       {feeSlip&&<FeeSlipModal invoiceId={feeSlip} onClose={()=>setFeeSlip(null)}/>}
       {/* Above everything, because every screen below it is about one child. */}
       {/* The guardian's own language, remembered between visits. Sits above

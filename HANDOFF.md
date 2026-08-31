@@ -989,6 +989,73 @@ asal kaam hain, andaza nahi — is liye ye **naapa hua** chhor raha hoon, **kiya
 
 ---
 
+## 6w. URDU — sirf walidain ke liye (2026-08-31)
+
+Admin aur teachers saara din English software chalate hain. Jo walid ye dekh raha hai ke
+uska bacha aaj ghair-haazir tha ya nahi, us ne English ka intekhab nahi kiya tha — aur
+zyadatar Pakistani gharon mein wahi wo fard hai jise English-only screen sab se kam kaam
+deti hai. Is liye **parent portal Urdu bolta hai, aur sirf parent portal**.
+
+### Paimana — jo dara raha tha, wo tha nahi
+
+```
+ParentPortal   820 lines
+strings        ~160  (nav, labels, jumle, ginti wale phrases)
+```
+
+Poori app ka i18n nahi — ek portal. `src/i18n.js` mein ek table aur `t()`, koi library
+nahi: **ek dependency is table se zyada wazni hoti**.
+
+### Do faisle jo ahem hain
+
+**Layout RTL nahi kiya.** Browser Urdu ko apne run ke andar khud dayen-se-bayen rakhta
+hai, chahe page bayen-se-dayen chale. To alfaz durust parhe jate hain **1,889 inline
+styles ko chhue baghair** — aur adhoora RTL flip saaf LTR page se kahin bura parhta hai.
+Agar kabhi poora product tarjuma ho, tab flip karna.
+
+**Ginti wale jumle `{n}` rakhte hain**, jori nahi jate — kyunke Urdu adad wahan rakhti hai
+jahan English nahi:
+
+```
+"of {n} students"  →  "{n} طلبہ میں سے"      (na ke "of 5" ka seedha tarjuma)
+```
+
+Isi wajah se greeting ka lead-in Urdu mein khali hai aur tail poora jumla uthata hai:
+**"Fatima کے تعلیمی سفر کی مکمل تفصیل۔"** — na ke lafz-ba-lafz tarjuma jo mashini lagta.
+
+### Isolation — maan kar nahi, naap kar
+
+Zabaan device par mehfooz hoti hai (`localStorage`), to khatra ye tha ke walid ke Urdu
+chunne par usi phone par teacher ya admin ko bhi Urdu mile. Naapa gaya:
+
+```
+storedLang: "ur"   →  teacher portal: teacherSeesUrdu = false
+                      admin bar: Dashboard · Students · Teachers · Parents · More
+                      anyUrduOnScreen = false
+```
+
+Bottom bar ke "More" aur "Log out" **props se aate hain**, `t()` se nahi — bar chaaron
+portals share karte hain, aur `t()` seedha lagane se wahi leak banta.
+
+### Do dafa ek hi ghalti
+
+`src.replace()` sirf **pehla** match badalta hai. Greeting pehle teacher portal par lagi,
+aur `moreLabel` admin ke Shell par — dono dafa leak banta. Dono pakre aur theek kiye; jo
+patch multiple portals ko chhoo sakta ho, us mein index se target karna chahiye.
+
+### Aur ek asli bug jo isi jhaaru mein mila
+
+Profile card par AI Score **"null / 100"** dikha raha tha. Section 6u mein jab ye theek
+kiya gaya tha to teen mein se do readouts guard huye the — ye teesra tha. Ab teenon
+guarded hain.
+
+### Kya tarjuma nahi hota
+
+School ka apna likha hua matn — notice ka mazmoon, message ke subject, teacher ke naam,
+"Mother". Wo school ne likha hai, product ne nahi.
+
+---
+
 ## 6v. PHONE PAR ASLI APP — parent aur teacher ke liye (2026-08-31)
 
 User: *"parents and teacher have to use it on mobile phones, make it more responsive like a
