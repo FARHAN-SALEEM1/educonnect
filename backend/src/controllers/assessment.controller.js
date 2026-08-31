@@ -289,17 +289,98 @@ export const gradebook = asyncHandler(async (req, res) => {
     },
   });
 
-  // Column headers = every distinct assessment title in this subject.
-  const columns = [
-    ...new Set(enrollments.flatMap((e) => e.assessments.map((a) => a.title))),
-  ];
+  /**
+   * One column per sitting, not per title.
+   *
+   * The columns used to be the distinct titles, and each cell was filled with
+   * `assessments.find(a => a.title === title)` — the first match. A teacher who
+   * sets a quiz called "quiz" twice therefore got one column and one of the two
+   * marks; the other was invisible in the book and in the CSV, while still
+   * counting towards the average printed beside it. The page showed 12/20 and
+   * 18/20 next to an average of 82%, which is the arithmetic of a third mark
+   * nobody could see.
+   *
+   * `bulkCreateAssessments` writes one row per enrolment sharing a title, type,
+   * total, term and date, so that tuple is most of what a column is. It is not
+   * quite all of it: the two quizzes above were recorded forty-four seconds
+   * apart on the same afternoon, so they agree on every one of those fields.
+   * A batch has no id of its own to key on, so where a group holds more than
+   * one paper for a student it opens that many columns, and each student's
+   * marks fill them in the order they were entered.
+   */
+  const groupOf = (a) =>
+    [
+      a.title,
+      a.type,
+      a.total,
+      a.examTermId ?? "",
+      a.takenOn ? a.takenOn.toISOString().slice(0, 10) : "",
+    ].join("|");
+
+  /** Each enrolment's marks, bucketed by group and kept in entry order. */
+  const bucketed = new Map();
+  for (const e of enrollments) {
+    const byGroup = new Map();
+    for (const a of [...e.assessments].sort((x, y) => x.createdAt - y.createdAt)) {
+      const g = groupOf(a);
+      if (!byGroup.has(g)) byGroup.set(g, []);
+      byGroup.get(g).push(a);
+    }
+    bucketed.set(e.id, byGroup);
+  }
+
+  /** How many columns each group needs — the most any one student sat. */
+  const groups = new Map();
+  for (const byGroup of bucketed.values()) {
+    for (const [g, list] of byGroup) {
+      const seen = groups.get(g);
+      if (!seen) groups.set(g, { slots: list.length, sample: list[0] });
+      else seen.slots = Math.max(seen.slots, list.length);
+    }
+  }
+
+  const titleCounts = new Map();
+  for (const { sample } of groups.values())
+    titleCounts.set(sample.title, (titleCounts.get(sample.title) ?? 0) + 1);
+
+  const columns = [...groups.entries()]
+    .sort(([, a], [, b]) => {
+      const t = (a.sample.takenOn?.getTime() ?? 0) - (b.sample.takenOn?.getTime() ?? 0);
+      return t !== 0 ? t : a.sample.title.localeCompare(b.sample.title);
+    })
+    .flatMap(([g, { slots, sample }]) =>
+      Array.from({ length: slots }, (_, i) => {
+        /*
+         * The date appears only when the title alone would not tell two
+         * columns apart, and the number only when one sitting was not enough,
+         * so a book with no repeats keeps its clean headings.
+         */
+        const dated =
+          titleCounts.get(sample.title) > 1 && sample.takenOn
+            ? `${sample.title} · ${sample.takenOn.toLocaleDateString("en-GB", {
+                day: "numeric",
+                month: "short",
+              })}`
+            : sample.title;
+        return {
+          key: `${g}#${i}`,
+          title: sample.title,
+          type: sample.type,
+          takenOn: sample.takenOn,
+          term: sample.examTerm?.name ?? null,
+          label: slots > 1 ? `${dated} (${i + 1})` : dated,
+        };
+      })
+    );
 
   const rows = enrollments
     .map((e) => {
       const marks = {};
-      for (const title of columns) {
-        const a = e.assessments.find((x) => x.title === title);
-        marks[title] = a
+      const byGroup = bucketed.get(e.id) ?? new Map();
+      for (const col of columns) {
+        const hash = col.key.lastIndexOf("#");
+        const a = (byGroup.get(col.key.slice(0, hash)) ?? [])[Number(col.key.slice(hash + 1))];
+        marks[col.key] = a
           ? { obtained: a.obtained, total: a.total, term: a.examTerm?.name ?? null, percentage: Number(((a.obtained / a.total) * 100).toFixed(1)) }
           : null;
       }

@@ -213,7 +213,10 @@ describe("the gradebook follows the same term", () => {
     if (skip()) return;
     const res = await as(admin).get(`/api/assessments/gradebook?subjectId=${subjectId}&term=First%20Term`);
     expect(res.status).toBe(200);
-    expect(res.body.data.columns).toEqual(["First Term Exam"]);
+    // A column is a sitting now, not a bare title — same one paper, more of
+    // its identity carried alongside so two papers named alike stay apart.
+    expect(res.body.data.columns.map((c) => c.title)).toEqual(["First Term Exam"]);
+    expect(res.body.data.columns[0].term).toBe("First Term");
   });
 
   it("averages that term too, not the whole year beside it", async () => {

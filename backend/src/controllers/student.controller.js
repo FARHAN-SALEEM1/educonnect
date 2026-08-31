@@ -22,6 +22,7 @@ import { generateInsightsForStudent } from "../services/insight.service.js";
 import { assertSeatsAvailable, seatsRemaining } from "../utils/subscription.js";
 import { balanceOf, isOutstanding } from "../utils/fees.js";
 import {
+  currentSessionId,
   defaultSpan,
   readSessionId,
   resolveSession,
@@ -524,6 +525,7 @@ export const createStudent = asyncHandler(async (req, res) => {
   await assertBranchInInstitute(data.branchId, instituteId);
 
   const code = await nextStudentCode(instituteId);
+  const academicSessionId = subjectIds?.length ? await currentSessionId(instituteId) : null;
 
   const student = await prisma.student.create({
     data: {
@@ -531,8 +533,19 @@ export const createStudent = asyncHandler(async (req, res) => {
       code,
       instituteId,
       dob: data.dob ? new Date(data.dob) : null,
+      /**
+       * Admitting a child straight into their subjects.
+       *
+       * An enrolment belongs to an academic year, and this nested create never
+       * said which — so every admission that named a subject failed on the
+       * database, and the admin was told "Invalid data sent to the database"
+       * about a field the API documents and accepts. `POST /subjects/enroll`
+       * had it right all along; this is the same line.
+       */
       ...(subjectIds?.length && {
-        enrollments: { create: subjectIds.map((subjectId) => ({ subjectId })) },
+        enrollments: {
+          create: subjectIds.map((subjectId) => ({ subjectId, academicSessionId })),
+        },
       }),
     },
     include: { parent: true, enrollments: { include: { subject: true } } },

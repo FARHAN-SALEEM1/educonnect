@@ -7815,10 +7815,10 @@ const TeacherPortal=({user,db,onLogout,onReload,onUser})=>{
         stamped(`gradebook-${book.subject.name.replace(/\W+/g,"-").toLowerCase()}`,"csv"),
         book.rows.map(r=>({
           roll:r.student.rollNo,name:r.student.name,
-          ...Object.fromEntries(cols.map(c=>[c,r.marks[c]?`${r.marks[c].obtained}/${r.marks[c].total}`:""])),
+          ...Object.fromEntries(cols.map(c=>[c.label,r.marks[c.key]?`${r.marks[c.key].obtained}/${r.marks[c.key].total}`:""])),
           average:r.average??"",grade:r.letterGrade??"",trend:r.trend??"",
         })),
-        [["Roll No","roll"],["Student","name"],...cols.map(c=>[c,c]),
+        [["Roll No","roll"],["Student","name"],...cols.map(c=>[c.label,c.label]),
           ["Average (%)","average"],["Grade","grade"],["Trend","trend"]]
       );
     };
@@ -7866,7 +7866,7 @@ const TeacherPortal=({user,db,onLogout,onReload,onUser})=>{
 
           {!loading&&!err&&book?.rows?.length>0&&cols.length>0&&(
             <table style={{width:"100%",borderCollapse:"collapse"}}>
-              <thead><tr>{["Student",...cols,"Avg.","Grade","Trend"].map(h=>(
+              <thead><tr>{["Student",...cols.map(c=>c.label),"Avg.","Grade","Trend"].map(h=>(
                 <th key={h} style={{textAlign:"left",padding:"9px 12px",fontSize:11,color:T.muted,fontWeight:700,textTransform:"uppercase",letterSpacing:".7px",borderBottom:`2px solid ${T.border}`}}>{h}</th>
               ))}</tr></thead>
               <tbody>{book.rows.map(r=>(
@@ -7876,9 +7876,9 @@ const TeacherPortal=({user,db,onLogout,onReload,onUser})=>{
                     <span style={{fontSize:13,color:T.ink,fontWeight:600}}>{r.student.name}</span>
                   </div></td>
                   {cols.map(c=>{
-                    const m=r.marks[c];
+                    const m=r.marks[c.key];
                     return(
-                      <td key={c} style={{padding:"12px",fontSize:13,fontWeight:600,
+                      <td key={c.key} style={{padding:"12px",fontSize:13,fontWeight:600,
                         color:!m?T.muted:m.percentage>=80?T.success:m.percentage>=60?T.warning:T.danger}}>
                         {m?`${m.obtained}/${m.total}`:"—"}
                       </td>
