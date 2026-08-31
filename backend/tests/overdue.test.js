@@ -187,3 +187,41 @@ describe("the due date a billing run writes", () => {
     expect(invoice.dueDate.toISOString()).toBe("2026-11-10T00:00:00.000Z");
   });
 });
+
+/**
+ * A defaulter's row said "Paid".
+ *
+ * The roster badge asked `fees.some(f => f.status === "pending")`, and the list
+ * endpoint carried twelve full invoices per student so it could. Both halves
+ * were wrong. An OVERDUE challan is not "pending", so the one family the office
+ * most needs to see read as settled — the failure pointed the safe way, which is
+ * why nobody noticed. And the answer was already on the row: the server totals
+ * PENDING + OVERDUE balances into `duesOutstanding` from its own lean query.
+ *
+ * Sending the invoices was costing 1.2 KB per student — on a 1,200-student
+ * school, 1.4 MB per portal load to render a two-word badge.
+ */
+describe("what the roster needs to badge a fee", () => {
+  it("counts an overdue challan as money owed", async () => {
+    if (skip()) return;
+    const invoice = await issue(dayIn(-1));
+    await as(admin).post("/api/fees/mark-overdue").send({});
+    expect(await statusOf(invoice.id)).toBe("OVERDUE");
+
+    const row = (await as(admin).get("/api/students?limit=50")).body.data.find(
+      (s) => s.id === student.id
+    );
+
+    expect(row.duesOutstanding, "an overdue fee is still unpaid").toBeGreaterThan(0);
+  });
+
+  it("does not ship the invoices themselves to say it", async () => {
+    if (skip()) return;
+    const row = (await as(admin).get("/api/students?limit=50")).body.data.find(
+      (s) => s.id === student.id
+    );
+
+    expect(row.fees, "twelve invoices per student, for one badge").toBeUndefined();
+    expect(row.weekAttendance, "built, sent, and read by nobody").toBeUndefined();
+  });
+});

@@ -337,7 +337,6 @@ export const toLegacyStudentSummary = (s) => ({
   dob: isoDate(s.dob),
   blood: s.bloodGroup,
 
-  gpa: s.gpa ?? 0,
   /**
    * `null` means no position, and it has to survive the mapping.
    *
@@ -355,6 +354,18 @@ export const toLegacyStudentSummary = (s) => ({
 
   att: toLegacyAttendance(s.attendance),
   weekAtt: toLegacyWeek(s.weekAttendance),
+  /**
+   * What this child still owes, as a number the roster can badge on.
+   *
+   * The roster used to ask `fees.some(f => f.status === "pending")`, which
+   * forced the list endpoint to carry twelve full invoices per student — and
+   * it still answered wrongly, because an OVERDUE challan is not "pending",
+   * so a defaulter's row read "Paid". The server already totals PENDING +
+   * OVERDUE balances, so the roster reads that and the invoices stay where
+   * they are actually needed: on the detail record.
+   */
+  dues: s.duesOutstanding ?? 0,
+  // Empty on a list row by design — toLegacyStudentFull fills it from detail.
   fees: toLegacyFees(s.fees),
   subjects: toLegacySubjects(s.subjects),
 });
@@ -380,7 +391,6 @@ export const toLegacyStudentFull = (s) => ({
   aiRecs: toLegacyInsights(s.aiInsights),
   aiScore: aiScoreFrom(s.aiInsights),
   aiScoreLabel: aiScoreLabel(aiScoreFrom(s.aiInsights)),
-  gpa: s.gpa ?? 0,
   /**
    * `null` means no position, and it has to survive the mapping.
    *

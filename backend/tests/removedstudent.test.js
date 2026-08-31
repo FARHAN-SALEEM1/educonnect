@@ -49,7 +49,7 @@ const dayIn = (offset = 0) =>
     day: "2-digit",
   }).format(new Date(Date.now() + offset * 86_400_000));
 
-let sa, admin, instId, stays, leaves;
+let sa, admin, instId, stays, leaves, guardian;
 let seeded = true;
 
 beforeAll(async () => {
@@ -110,6 +110,22 @@ beforeAll(async () => {
     await as(admin)
       .post("/api/fees")
       .send({ studentId: s.id, period: "2026-05", amount: 5000 });
+  }
+
+  // A guardian for both, so the parents screen has something to get wrong.
+  guardian = (
+    await as(admin).post("/api/parents").send({
+      name: "Removed Spec Guardian",
+      email: `removed.guardian.${stamp}@test.edu`,
+      phone: "03004444444",
+      relation: "Father",
+      createLogin: false,
+      studentIds: [stays.id, leaves.id],
+    })
+  ).body.data;
+  if (!guardian) {
+    seeded = false;
+    return;
   }
 
   // And then one of them leaves.
@@ -228,5 +244,40 @@ describe("the fee totals agree with the fee list", () => {
     const res = await as(admin).get("/api/dashboard/admin");
 
     expect(res.body.data?.fees?.pending).toBe(5000);
+  });
+});
+
+/**
+ * A child in the recycle bin was still a child on the parents screen.
+ *
+ * The soft-delete extension only rewrites a query's top-level where, so a
+ * student pulled in through `include: { students: ... }` arrived whatever their
+ * deletedAt said. Every _count of students in this codebase already spelled the
+ * filter out; the parent includes did not. A removed pupil therefore kept their
+ * place on the admin's parents list, grade and roll number and all, and was
+ * still counted in childrenCount.
+ */
+describe("a removed child on the parents screen", () => {
+  const guardianRow = async () =>
+    (await as(admin).get("/api/parents")).body.data.find((p) => p.id === guardian.id);
+
+  it("is not listed against their guardian", async () => {
+    if (skip()) return;
+    const names = (await guardianRow()).students.map((s) => s.name);
+
+    expect(names).toContain("Aliya Stays");
+    expect(names, "the recycle bin is not the roster").not.toContain("Bilal Leaves");
+  });
+
+  it("is not counted either", async () => {
+    if (skip()) return;
+    expect((await guardianRow()).childrenCount).toBe(1);
+  });
+
+  it("is gone from the guardian's own record too", async () => {
+    if (skip()) return;
+    const detail = (await as(admin).get(`/api/parents/${guardian.id}`)).body.data;
+
+    expect(detail.students.map((s) => s.name)).toEqual(["Aliya Stays"]);
   });
 });

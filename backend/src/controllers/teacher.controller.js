@@ -450,3 +450,48 @@ export const restoreTeacher = asyncHandler(async (req, res) => {
   audit(req, { action: "teacher.restore", entity: "Teacher", entityId: teacher.id });
   return ok(res, null, `${teacher.name} restored. Re-assign their subjects as needed.`);
 });
+
+/**
+ * DELETE /api/teachers/:id/purge — destroy a removed teacher for good.
+ *
+ * The recycle bin only ever hid the row. Everything about them stayed exactly
+ * where it was, which is what let a restore be honest. This is the other door,
+ * and it is the only one in the product that really loses something.
+ *
+ * It refuses anyone who is not already in the bin, so this cannot be reached
+ * from the staff list by mistake, and it counts what it is about to destroy so the
+ * confirmation can name the real cost instead of warning in the abstract.
+ */
+export const purgeTeacher = asyncHandler(async (req, res) => {
+  const teacher = await prismaRaw.teacher.findFirst({
+    where: { id: req.params.id, instituteId: req.instituteId },
+    select: {
+      id: true, name: true, deletedAt: true, userId: true,
+      _count: { select: { subjects: true, timetableSlots: true } },
+    },
+  });
+
+  if (!teacher) throw ApiError.notFound("Teacher not found");
+  if (!teacher.deletedAt) {
+    throw ApiError.badRequest(
+      `${teacher.name} is still on the staff list. Remove them first — permanent deletion only applies to the recycle bin.`
+    );
+  }
+
+  // Their subjects and periods survive them, unassigned — a class is not the
+  // teacher's property. Only the person and their login go.
+  const destroyed = {
+    subjectsUnassigned: teacher._count.subjects,
+    periodsUnassigned: teacher._count.timetableSlots,
+  };
+  await prismaRaw.$transaction(async (tx) => {
+    await tx.teacher.delete({ where: { id: teacher.id } });
+    if (teacher.userId) await tx.user.delete({ where: { id: teacher.userId } });
+  });
+
+  audit(req, {
+    action: "teacher.purge", entity: "Teacher", entityId: teacher.id,
+    meta: { name: teacher.name, ...destroyed },
+  });
+  return ok(res, destroyed, `${teacher.name} has been deleted permanently.`);
+});

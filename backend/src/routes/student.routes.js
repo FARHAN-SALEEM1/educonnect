@@ -29,6 +29,14 @@ router.post(
   requireInstitute,
   ctrl.restoreStudent
 );
+// The one endpoint that actually destroys something. It only accepts records
+// already in the recycle bin, so the roster cannot reach it by mistake.
+router.delete(
+  "/:id/purge",
+  authorize("SUPERADMIN", "ADMIN"),
+  requireInstitute,
+  ctrl.purgeStudent
+);
 
 router.get("/", validate(studentQuery, "query"), scopeToInstitute, ctrl.listStudents);
 router.get("/:id", scopeToInstitute, ctrl.getStudent);

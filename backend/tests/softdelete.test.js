@@ -267,3 +267,80 @@ describe("the recycle bin round trip", () => {
     expect((await as(admin).post(`/api/students/${id}/restore`)).status).toBe(200);
   });
 });
+
+/**
+ * The bin's other door.
+ *
+ * Every removal in this product was reversible, which is what made the bin
+ * honest — and it also meant a school could never be rid of a record it had
+ * typed in by mistake. Purge is the exception, so it is fenced: only records
+ * already in the bin, and only your own school's.
+ */
+describe("deleting from the recycle bin for good", () => {
+  const strays = [];
+
+  afterAll(async () => {
+    if (!seeded) return;
+    await prismaRaw.student.deleteMany({ where: { id: { in: strays } } }).catch(() => {});
+  });
+
+  const makeStudent = async (tag) => {
+    const res = await as(admin).post("/api/students").send({
+      name: `${MARK} ${tag}`, grade: "Grade 10", section: "Z",
+      rollNo: `SD-PRG-${tag}-${Date.now()}`,
+    });
+    expect(res.status).toBe(201);
+    return res.body.data.id;
+  };
+
+  it("refuses one who is still on the roster", async () => {
+    if (skip()) return;
+    const id = await makeStudent("Live");
+    strays.push(id);
+
+    const res = await as(admin).delete(`/api/students/${id}/purge`);
+
+    expect(res.status, "the roster must not reach this").toBe(400);
+    expect(res.body.message).toMatch(/recycle bin/i);
+    expect(await prismaRaw.student.findUnique({ where: { id } })).not.toBeNull();
+  });
+
+  it("destroys one who is in the bin, for real", async () => {
+    if (skip()) return;
+    const id = await makeStudent("Purge");
+    expect((await as(admin).delete(`/api/students/${id}`)).status).toBe(200);
+
+    const res = await as(admin).delete(`/api/students/${id}/purge`);
+    expect(res.status).toBe(200);
+
+    // Not hidden this time — gone from the table.
+    expect(await prismaRaw.student.findUnique({ where: { id } })).toBeNull();
+    const binned = await as(admin).get("/api/students/deleted");
+    expect(binned.body.data.some((x) => x.id === id)).toBe(false);
+  });
+
+  it("has nothing left to delete the second time", async () => {
+    if (skip()) return;
+    const id = await makeStudent("Twice");
+    await as(admin).delete(`/api/students/${id}`);
+    expect((await as(admin).delete(`/api/students/${id}/purge`)).status).toBe(200);
+
+    expect((await as(admin).delete(`/api/students/${id}/purge`)).status).toBe(404);
+  });
+
+  it("will not let one institute destroy another's", async () => {
+    if (skip()) return;
+    const id = await makeStudent("Tenant");
+    strays.push(id);
+    await as(admin).delete(`/api/students/${id}`);
+
+    const other = await request(app).post("/api/auth/login").send({ email: "admin@lacas.edu", password: "admin123" });
+    if (other.status !== 200) return;
+
+    expect((await as(other.body.data.accessToken).delete(`/api/students/${id}/purge`)).status).toBe(404);
+
+    // Still ours, still in the bin, still restorable.
+    expect(await prismaRaw.student.findUnique({ where: { id } })).not.toBeNull();
+    expect((await as(admin).post(`/api/students/${id}/restore`)).status).toBe(200);
+  });
+});

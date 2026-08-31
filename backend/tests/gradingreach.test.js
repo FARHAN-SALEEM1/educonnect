@@ -191,27 +191,6 @@ describe("the school's scale reaches every screen, not only the card", () => {
   });
 });
 
-describe("grade points follow the school too", () => {
-  /**
-   * A GPA is grade points averaged, and the points are part of the policy. A
-   * school awarding 5 for its top band was still handed a 4.0-scale figure
-   * everywhere but the card.
-   */
-  it("the student list reports the school's own points", async () => {
-    if (skip()) return;
-    const res = await as(admin).get("/api/students?limit=50");
-    const row = res.body.data.find((s) => s.id === studentId);
-    expect(row.gpa).toBe(5);
-  });
-
-  it("so does the parent's list of children", async () => {
-    if (skip() || !parent) return;
-    const res = await as(parent).get("/api/parents/me/children");
-    const child = res.body.data.find((s) => s.id === studentId);
-    expect(child.gpa).toBe(5);
-  });
-});
-
 describe("changing the policy takes effect at once", () => {
   /**
    * `Enrollment.letterGrade` is a cache written when marks were last

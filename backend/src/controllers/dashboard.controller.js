@@ -256,7 +256,6 @@ export const adminDashboard = asyncHandler(async (req, res) => {
       section: s.section,
       rollNo: s.rollNo,
       average: averageScore(s.enrollments),
-      gpa: grading.gpa(s.enrollments),
     }))
     .filter((s) => s.average > 0)
     .sort((a, b) => b.average - a.average);
@@ -478,6 +477,8 @@ export const parentDashboard = asyncHandler(async (req, res) => {
     include: {
       institute: { select: { id: true, name: true, logo: true, color: true, city: true } },
       students: {
+        // Relation includes skip the soft-delete extension; see parent.controller.js.
+        where: { deletedAt: null },
         include: {
           enrollments: {
             where: sessionFilter(parentSessionId),
@@ -517,7 +518,6 @@ export const parentDashboard = asyncHandler(async (req, res) => {
         section: s.section,
         rollNo: s.rollNo,
         photoUrl: s.photoUrl,
-        gpa: grading.gpa(s.enrollments),
         average: averageScore(s.enrollments),
         subjects: s.enrollments.map((e) => ({
           name: e.subject.name,
@@ -650,7 +650,6 @@ export const instituteReport = asyncHandler(async (req, res) => {
       section: s.section,
       rollNo: s.rollNo,
       average: averageScore(s.enrollments),
-      gpa: grading.gpa(s.enrollments),
       attendanceRate: attendanceSummary(perStudentAttendance.get(s.id) || []).rate,
     }))
     .sort((a, b) => b.average - a.average);

@@ -192,7 +192,6 @@ describe("a term result card", () => {
     const final = await card(alia, "Final Term");
     expect(final.average).toBeNull();
     expect(final.overallGrade).toBeNull();
-    expect(final.gpa).toBeNull();
     expect(final.rank).toBeNull();
     // the class is still a real size, and the subject says why it is empty
     expect(final.classSize).toBe(2);

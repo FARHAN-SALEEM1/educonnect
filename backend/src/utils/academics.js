@@ -1,6 +1,6 @@
 /**
  * Shared academic maths: percentage → letter grade → grade point,
- * GPA, attendance rates, and the next-term score prediction.
+ * attendance rates, and the next-term score prediction.
  * Keeping it in one place means the teacher portal, parent portal and
  * report exports can never disagree about a student's grade.
  */
@@ -25,8 +25,6 @@ const platform = gradingFor(null);
 export const letterGrade = (score) => platform.letterGrade(score);
 export const gradePoint = (score) => platform.gradePoint(score);
 
-/** Unweighted GPA on the platform default scale. */
-export const calculateGpa = (enrollments = []) => platform.gpa(enrollments);
 
 export const averageScore = (enrollments = []) => {
   const scored = enrollments.filter((e) => e.currentScore !== null && e.currentScore !== undefined);

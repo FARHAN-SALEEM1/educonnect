@@ -275,6 +275,34 @@ const pressable=(onPress,label,{disabled=false}={})=>({
   },
 });
 
+/**
+ * The row actions, pinned to the right edge of a people table.
+ *
+ * These tables carry more columns than a laptop window fits, and below 768px
+ * they become their own horizontal scroll region (A§9). That left Edit and
+ * Delete off the right edge, behind a scrollbar thin enough to miss — so the
+ * buttons did not look out of view, they looked absent, and "delete does
+ * nothing" was a fair conclusion to draw. Pinning the last column keeps them
+ * where the eye looks for them at every width.
+ *
+ * The opaque background is not decoration: without it the scrolled columns
+ * would show straight through the pinned cell.
+ */
+/**
+ * A people table scrolls itself, at every width — not only below 768px.
+ *
+ * A§9 made tables their own scroll region on phones. Between that breakpoint
+ * and roughly 1100px the table was still wider than the page but was *not* a
+ * scroll region, so the last column was simply clipped with no scrollbar to
+ * reach it: on an ordinary laptop the delete button did not exist. Owning the
+ * overflow at all widths is what makes the pinned column below reachable.
+ */
+const scrollTable = { display: "block", overflowX: "auto", maxWidth: "100%", whiteSpace: "nowrap" };
+const scrollRows = { width: "max-content", minWidth: "100%" };
+
+const stickyCol = { position: "sticky", right: 0, background: T.card, zIndex: 1 };
+const stickyHead = { ...stickyCol, zIndex: 2 };
+
 const Modal=({title,onClose,children,width=500})=>(
   <div style={{position:"fixed",inset:0,background:"rgba(15,23,42,.55)",zIndex:2000,display:"flex",alignItems:"center",justifyContent:"center",animation:"fadeIn .2s"}} onClick={e=>e.target===e.currentTarget&&onClose()}>
     <div style={{background:T.card,borderRadius:22,width,maxWidth:"94vw",maxHeight:"88vh",overflowY:"auto",boxShadow:"0 32px 80px rgba(0,0,0,.28)",animation:"scaleIn .2s"}}>
@@ -2216,9 +2244,9 @@ const StudentImportModal=({onClose,onImported,seatsLeft=null})=>{
  * Module scope, like the other shared modals: inside a portal body this would
  * remount on every `onReload()` and lose whichever tab you were looking at.
  *
- * There is no permanent-delete button here on purpose. The API offers purge
- * for institutes only, and adding a way to destroy a child's marks, attendance
- * and fee history from a modal is not a thing this screen should be able to do.
+ * Permanent deletion lives here now, at the user's request. It is deliberately
+ * the harder of the two doors: the row asks in place before it acts, and the
+ * API refuses anything not already in the bin, so the roster cannot reach it.
  */
 const BIN_KINDS=[
   {key:"students",label:"Students",api:()=>api.students,columns:[["Name","name"],["Roll No","rollNo"],["Class","__class"]]},
@@ -2226,12 +2254,13 @@ const BIN_KINDS=[
   {key:"parents", label:"Parents", api:()=>api.parents, columns:[["Name","name"],["Email","email"],["Relation","relation"]]},
 ];
 
-const RecycleBinModal=({initialKind="students",onClose,onRestored})=>{
+const RecycleBinModal=({initialKind="students",onClose,onRestored,onPurged})=>{
   const[kind,setKind]=useState(initialKind);
   const[rows,setRows]=useState(null);
   const[err,setErr]=useState("");
   const[busy,setBusy]=useState("");
   const[note,setNote]=useState("");
+  const[confirming,setConfirming]=useState("");
 
   const spec=BIN_KINDS.find(k=>k.key===kind)??BIN_KINDS[0];
 
@@ -2262,6 +2291,31 @@ const RecycleBinModal=({initialKind="students",onClose,onRestored})=>{
     }
   };
 
+  /**
+   * The other door: this one really destroys.
+   *
+   * Two steps rather than a browser confirm, so the question is attached to the
+   * row it is about — and the answer names what actually went with them.
+   */
+  const purge=async row=>{
+    setBusy(row.id);setErr("");setNote("");
+    try{
+      const gone=await spec.api().purge(row.id);
+      const detail=Object.entries(gone||{})
+        .filter(([,n])=>n>0)
+        .map(([k,n])=>`${n} ${k.replace(/([A-Z])/g," $1").toLowerCase().trim()}`)
+        .join(", ");
+      setNote(`${row.name} deleted permanently${detail?` — ${detail}.`:"."}`);
+      setRows(r=>r.filter(x=>x.id!==row.id));
+      setConfirming("");
+      onPurged?.(row.name);
+    }catch(e){
+      setErr(e.message||`Could not delete ${row.name}.`);
+    }finally{
+      setBusy("");
+    }
+  };
+
   const when=v=>{
     if(!v)return "—";
     const d=new Date(v);
@@ -2272,8 +2326,9 @@ const RecycleBinModal=({initialKind="students",onClose,onRestored})=>{
   return(
     <Modal title="Recycle Bin" onClose={onClose} width={720}>
       <div style={{fontSize:12,color:T.muted,lineHeight:1.7,marginBottom:14}}>
-        Removed records are kept, not destroyed. Restoring one puts it back exactly as it was —
-        marks, attendance and fee history included, because none of it was ever deleted.
+        Removing a record only hides it. Restoring one puts it back exactly as it was — marks,
+        attendance and fee history included, because none of it was ever deleted. Deleting from
+        here is the exception: it is permanent, and their history goes with them.
       </div>
 
       <div style={{display:"flex",gap:6,marginBottom:16,borderBottom:`1px solid ${T.border}`,paddingBottom:12}}>
@@ -2315,18 +2370,31 @@ const RecycleBinModal=({initialKind="students",onClose,onRestored})=>{
                   ))}
                   <td style={{padding:"9px 12px",borderBottom:`1px solid ${T.border}`,color:T.muted,whiteSpace:"nowrap"}}>{when(row.deletedAt)}</td>
                   <td style={{padding:"9px 12px",borderBottom:`1px solid ${T.border}`,textAlign:"right"}}>
-                    {/* A pill, but it acts as a button, so it answers to Tab
-                        and Enter like one. */}
-                    <span role="button" tabIndex={busy===row.id?-1:0}
-                      aria-label={`Restore ${row.name}`} aria-disabled={busy===row.id}
-                      onClick={()=>busy!==row.id&&restore(row)}
-                      onKeyDown={e=>{
-                        if(busy===row.id)return;
-                        if(e.key==="Enter"||e.key===" "){e.preventDefault();restore(row);}
-                      }}
-                      style={{display:"inline-block",cursor:busy===row.id?"default":"pointer",opacity:busy===row.id?.5:1}}>
-                      <Bdg label={busy===row.id?"Restoring…":"Restore"} color={T.forest} bg={`${T.forest}15`}/>
-                    </span>
+                    {confirming===row.id?(
+                      <div style={{display:"flex",gap:6,justifyContent:"flex-end",alignItems:"center",flexWrap:"wrap"}}>
+                        <span style={{fontSize:11,color:T.danger,fontWeight:700}}>Delete for good?</span>
+                        <span {...pressable(()=>purge(row),`Confirm permanent deletion of ${row.name}`,{disabled:busy===row.id})}
+                          style={{cursor:busy===row.id?"wait":"pointer"}}>
+                          <Bdg label={busy===row.id?"Deleting…":"Yes, delete"} color={T.danger} bg={`${T.danger}15`}/>
+                        </span>
+                        <span {...pressable(()=>setConfirming(""),"Keep it")} style={{cursor:"pointer"}}>
+                          <Bdg label="Keep" color={T.muted} bg={T.paper}/>
+                        </span>
+                      </div>
+                    ):(
+                      <div style={{display:"flex",gap:6,justifyContent:"flex-end"}}>
+                        {/* Pills, but they act as buttons, so they answer to Tab
+                            and Enter like one. */}
+                        <span {...pressable(()=>restore(row),`Restore ${row.name}`,{disabled:busy===row.id})}
+                          style={{cursor:busy===row.id?"default":"pointer",opacity:busy===row.id?.5:1}}>
+                          <Bdg label={busy===row.id?"Restoring…":"Restore"} color={T.forest} bg={`${T.forest}15`}/>
+                        </span>
+                        <span {...pressable(()=>{setConfirming(row.id);setErr("");setNote("");},`Delete ${row.name} permanently`)}
+                          style={{cursor:"pointer"}}>
+                          <Bdg label="Delete" color={T.danger} bg={`${T.danger}15`}/>
+                        </span>
+                      </div>
+                    )}
                   </td>
                 </tr>
               ))}
@@ -3195,11 +3263,10 @@ const ReportCardModal=({studentId,onClose})=>{
 
             {/* The figures a parent reads first — position at the front,
                 because in a Pakistani result card that is the headline. */}
-            <div style={{display:"grid",gridTemplateColumns:"repeat(5,1fr)",gap:10,marginBottom:16}}>
+            <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:10,marginBottom:16}}>
               {[
                 ["Position",data.rank?`${ordinal(data.rank)}${data.classSize?` of ${data.classSize}`:""}`:"—"],
                 ["Overall Average",data.average!=null?`${data.average}%`:"—"],
-                ["GPA",data.gpa??"—"],
                 ["Overall Grade",data.overallGrade||"—"],
                 ["Attendance",attPct!=null?`${attPct}%`:"—"],
               ].map(([l,v])=>(
@@ -4642,6 +4709,57 @@ const AdminPortal=({user,db,setDb,onLogout,onReload})=>{
 
   const teachers=db.teachers.filter(t=>t.instId===user.inst);
   const parents=db.parents.filter(p=>p.instId===user.inst);
+
+  /**
+   * Finding one child in a school of twelve hundred.
+   *
+   * The roster and the parent list had no search at all: three buttons, then
+   * every row in one table with no pagination. The commonest question a school
+   * office asks is about one named child, and answering it meant scrolling, or
+   * the browser own Ctrl+F.
+   *
+   * Filtered here rather than by asking the server, because useDb has already
+   * fetched the whole cohort for the reports, the register and the parent
+   * lookups; sixty-odd sites read db.students. With the rows already in hand, a
+   * round trip per keystroke would add latency and a second source of truth to
+   * answer a question we can answer instantly. If the roster ever stops loading
+   * the full set, this moves to the `search` parameter that GET /students and
+   * GET /parents already accept.
+   */
+  const[stuQ,setStuQ]=useState("");
+  const[stuGrade,setStuGrade]=useState("");
+  const[stuStatus,setStuStatus]=useState("");
+  const[parQ,setParQ]=useState("");
+
+  const gradeOptions=useMemo(()=>{
+    const seen=[...new Set(students.map(s=>s.grade).filter(Boolean))];
+    // Numeric collation, so "Grade 10" sorts after "Grade 9" and not before it.
+    seen.sort((a,b)=>a.localeCompare(b,undefined,{numeric:true}));
+    return[{v:"",l:"All grades"},...seen.map(g=>({v:g,l:g}))];
+  },[students]);
+
+  const statusOptions=[
+    {v:"",l:"All statuses"},{v:"active",l:"Active"},{v:"inactive",l:"Inactive"},
+    {v:"graduated",l:"Graduated"},{v:"transferred",l:"Transferred"},
+  ];
+
+  const shownStudents=useMemo(()=>{
+    const q=stuQ.trim().toLowerCase();
+    const has=v=>(v??"").toLowerCase().includes(q);
+    return students.filter(s=>
+      (!stuGrade||s.grade===stuGrade)&&
+      (!stuStatus||s.status===stuStatus)&&
+      // Name, roll and code: the three things a parent or a file actually quotes.
+      (!q||has(s.name)||has(s.roll)||has(s.code))
+    );
+  },[students,stuQ,stuGrade,stuStatus]);
+
+  const shownParents=useMemo(()=>{
+    const q=parQ.trim().toLowerCase();
+    if(!q)return parents;
+    const has=v=>(v??"").toLowerCase().includes(q);
+    return parents.filter(p=>has(p.name)||has(p.email)||has(p.phone)||has(p.code));
+  },[parents,parQ]);
   const notices=db.notices.filter(n=>n.instId===user.inst);
 
   const nav=[
@@ -4712,7 +4830,7 @@ const AdminPortal=({user,db,setDb,onLogout,onReload})=>{
       if(!r.roster.length)throw new Error("No active students to report on.");
       downloadCsv(stamped("academic-report","csv"),r.roster,[
         ["Student","name"],["Roll No","rollNo"],["Grade","grade"],["Section","section"],
-        ["Average %","average"],["GPA","gpa"],["Attendance %","attendanceRate"],
+        ["Average %","average"],["Attendance %","attendanceRate"],
       ]);
       return `Academic report — ${count(r.roster.length,"student")}, overall average ${r.summary.overallAverage}%.`;
     });
@@ -4835,7 +4953,7 @@ const AdminPortal=({user,db,setDb,onLogout,onReload})=>{
     });
 
     const CARDS=[
-      ["◈","Academic Report","Every student's subject average, GPA and attendance in one sheet.",T.purple,"academic",academic],
+      ["◈","Academic Report","Every student's subject average and attendance in one sheet.",T.purple,"academic",academic],
       ["◷","Attendance Report","Attendance rate per student, sorted lowest first so absentees surface.",T.blue,"attendance",attendance],
       ["◑","Fee Collection Report","Every invoice with status, due date, payment date and method.",T.success,"fees",feeReport],
       ["⚠","Fee Defaulters","Who owes what, worst first — with the guardian's number to call.",T.danger,"defaulters",defaulters],
@@ -6283,7 +6401,7 @@ const AdminPortal=({user,db,setDb,onLogout,onReload})=>{
                 <div key={s.id} onClick={()=>setSelStu(selStu?.id===s.id?null:s)} style={{display:"flex",gap:12,alignItems:"center",padding:"11px 6px",borderBottom:`1px solid ${T.border}`,cursor:"pointer",background:selStu?.id===s.id?`${T.forest}05`:"transparent",borderRadius:selStu?.id===s.id?8:0}}>
                   <Av name={s.name} size={36} bg={`${T.forest}15`} color={T.forest} fs={12}/>
                   <div style={{flex:1}}><div style={{fontSize:13,fontWeight:600,color:T.ink}}>{s.name}</div><div style={{fontSize:11,color:T.muted}}>{s.grade} · Section {s.section} · Roll {s.roll}</div></div>
-                  <div style={{textAlign:"right"}}><div style={{fontSize:13,fontWeight:700,color:T.forest}}>GPA {s.gpa}</div><div style={{fontSize:10,color:T.muted}}>{s.rank?`Rank #${s.rank}`:"Unranked"}</div></div>
+                  <div style={{textAlign:"right"}}><div style={{fontSize:13,fontWeight:700,color:T.forest}}>{s.average}%</div><div style={{fontSize:10,color:T.muted}}>{s.rank?`Rank #${s.rank}`:"Unranked"}</div></div>
                 </div>
               ))}
               <Btn onClick={()=>setTab("students")} out color={T.forest} full style={{marginTop:14,padding:"9px",fontSize:12}}>View All Students →</Btn>
@@ -6358,7 +6476,7 @@ const AdminPortal=({user,db,setDb,onLogout,onReload})=>{
                     fourth used to read a literal "82/100" AI score for every
                     student alike; the list payload carries no insight data, so
                     it now shows the subject average, which it does carry. */}
-                {[["GPA",selStu.gpa,T.forest],["Rank",selStu.rank?`#${selStu.rank}`:"—",T.purple],["Attendance",`${selStu.att.present}%`,T.success],["Average",`${selStu.average}%`,T.gold]].map(([l,v,c])=>(
+                {[["Rank",selStu.rank?`#${selStu.rank}`:"—",T.purple],["Attendance",`${selStu.att.present}%`,T.success],["Average",`${selStu.average}%`,T.gold]].map(([l,v,c])=>(
                   <div key={l} style={{padding:"12px",background:T.paper,borderRadius:12,textAlign:"center"}}>
                     <div style={{fontFamily:"Georgia,serif",fontSize:20,fontWeight:800,color:c}}>{v}</div>
                     <div style={{fontSize:10,color:T.muted,marginTop:3}}>{l}</div>
@@ -6386,23 +6504,41 @@ const AdminPortal=({user,db,setDb,onLogout,onReload})=>{
               <Btn onClick={()=>setModal("Student")}>+ Add Student</Btn>
             </div>
           }/>
+          <div style={{display:"flex",gap:12,alignItems:"flex-end",flexWrap:"wrap",marginBottom:16}}>
+            <Inp label="Search" value={stuQ} onChange={e=>setStuQ(e.target.value)} placeholder="Name, roll no or code" style={{marginBottom:0,flex:"1 1 240px"}}/>
+            <Sel label="Grade" options={gradeOptions} value={stuGrade} onChange={e=>setStuGrade(e.target.value)} style={{marginBottom:0,width:160}}/>
+            <Sel label="Status" options={statusOptions} value={stuStatus} onChange={e=>setStuStatus(e.target.value)} style={{marginBottom:0,width:160}}/>
+            {(stuQ||stuGrade||stuStatus)&&(
+              <Btn out color={T.muted} onClick={()=>{setStuQ("");setStuGrade("");setStuStatus("");}} style={{marginBottom:2}}>Clear</Btn>
+            )}
+            <div style={{fontSize:12,color:T.muted,paddingBottom:12,marginLeft:"auto"}}>
+              {count(shownStudents.length,"student")}{shownStudents.length!==students.length&&` of ${students.length}`}
+            </div>
+          </div>
           <div style={{display:"grid",gridTemplateColumns:selStu?"1fr 370px":"1fr",gap:18}}>
             <Crd style={{padding:"26px"}}>
-              <table style={{width:"100%",borderCollapse:"collapse"}}>
-                <thead><tr>{["Student","Grade","Roll No","GPA","Attendance","Fees","Status",""].map(h=><th key={h} style={{textAlign:"left",padding:"9px 12px",fontSize:11,color:T.muted,fontWeight:700,textTransform:"uppercase",letterSpacing:".7px",borderBottom:`2px solid ${T.border}`}}>{h}</th>)}</tr></thead>
-                <tbody>{students.map(s=>(
+              <table style={{width:"100%",borderCollapse:"collapse",...scrollTable}}>
+                <thead style={scrollRows}><tr>{["Student","Grade","Roll No","Average","Attendance","Fees","Status",""].map((h,i,arr)=><th key={h} style={{...(i===arr.length-1?stickyHead:null),textAlign:"left",padding:"9px 12px",fontSize:11,color:T.muted,fontWeight:700,textTransform:"uppercase",letterSpacing:".7px",borderBottom:`2px solid ${T.border}`}}>{h}</th>)}</tr></thead>
+                <tbody style={scrollRows}>{shownStudents.map(s=>(
                   <tr key={s.id} onClick={()=>setSelStu(selStu?.id===s.id?null:s)} style={{borderBottom:`1px solid ${T.border}`,cursor:"pointer",background:selStu?.id===s.id?`${T.forest}07`:"transparent",transition:"background .1s"}}>
                     <td style={{padding:"12px"}}><div style={{display:"flex",gap:10,alignItems:"center"}}><Av name={s.name} size={32} bg={`${T.forest}18`} color={T.forest} fs={11}/><span style={{fontSize:13,fontWeight:600,color:T.ink}}>{s.name}</span></div></td>
                     <td style={{padding:"12px",fontSize:13,color:T.muted}}>{s.grade} {s.section}</td>
                     <td style={{padding:"12px",fontSize:13,color:T.muted}}>{s.roll}</td>
-                    <td style={{padding:"12px",fontSize:13,fontWeight:700,color:T.forest}}>{s.gpa}</td>
+                    <td style={{padding:"12px",fontSize:13,fontWeight:700,color:T.forest}}>{s.average}%</td>
                     <td style={{padding:"12px",fontSize:13,color:s.att.present>=90?T.success:T.warning,fontWeight:600}}>{s.att.present}%</td>
-                    <td style={{padding:"12px"}}><Bdg label={s.fees.some(f=>f.status==="pending")?"Pending":"Paid"} color={s.fees.some(f=>f.status==="pending")?T.warning:T.success} bg={s.fees.some(f=>f.status==="pending")?`${T.warning}15`:`${T.success}15`}/></td>
+                    <td style={{padding:"12px"}}><Bdg label={s.dues>0?"Pending":"Paid"} color={s.dues>0?T.warning:T.success} bg={s.dues>0?`${T.warning}15`:`${T.success}15`}/></td>
                     <td style={{padding:"12px"}}><Bdg label={s.status==="active"?"Active":s.status.charAt(0).toUpperCase()+s.status.slice(1)} color={s.status==="active"?T.success:T.muted} bg={s.status==="active"?`${T.success}15`:`${T.muted}15`}/></td>
-                    <td style={{padding:"12px"}}><RowActions name={s.name} busy={deleting===s.id} onEdit={()=>setEditing({type:"Student",record:s})} onDelete={()=>removeRow("Student",s)}/></td>
+                    <td style={{padding:"12px",...stickyCol}}><RowActions name={s.name} busy={deleting===s.id} onEdit={()=>setEditing({type:"Student",record:s})} onDelete={()=>removeRow("Student",s)}/></td>
                   </tr>
                 ))}</tbody>
               </table>
+              {!shownStudents.length&&(
+                <div style={{padding:"26px 6px",textAlign:"center",fontSize:13,color:T.muted}}>
+                  {students.length
+                    ?"No students match that search."
+                    :"No students yet."}
+                </div>
+              )}
             </Crd>
             {selStu&&(
               <Crd style={{padding:"24px",height:"fit-content",position:"sticky",top:20,animation:"fadeUp .3s"}}>
@@ -6414,7 +6550,7 @@ const AdminPortal=({user,db,setDb,onLogout,onReload})=>{
                   <span onClick={()=>setSelStu(null)} style={{cursor:"pointer",color:T.muted,fontSize:20}}>×</span>
                 </div>
                 <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:16}}>
-                  {[["GPA",selStu.gpa,T.forest],["Rank",selStu.rank?`#${selStu.rank}`:"—",T.purple],["Att.",`${selStu.att.present}%`,T.success],["Avg.",`${selStu.average}%`,T.gold]].map(([l,v,c])=>(
+                  {[["Rank",selStu.rank?`#${selStu.rank}`:"—",T.purple],["Att.",`${selStu.att.present}%`,T.success],["Avg.",`${selStu.average}%`,T.gold]].map(([l,v,c])=>(
                     <div key={l} style={{padding:"10px",background:T.paper,borderRadius:10,textAlign:"center"}}>
                       <div style={{fontFamily:"Georgia,serif",fontSize:18,fontWeight:800,color:c}}>{v}</div>
                       <div style={{fontSize:10,color:T.muted}}>{l}</div>
@@ -6502,10 +6638,17 @@ const AdminPortal=({user,db,setDb,onLogout,onReload})=>{
               <Btn onClick={()=>setModal("Parent")}>+ Add Parent</Btn>
             </div>
           }/>
+          <div style={{display:"flex",gap:12,alignItems:"flex-end",flexWrap:"wrap",marginBottom:16}}>
+            <Inp label="Search" value={parQ} onChange={e=>setParQ(e.target.value)} placeholder="Name, email, phone or code" style={{marginBottom:0,flex:"1 1 260px"}}/>
+            {parQ&&<Btn out color={T.muted} onClick={()=>setParQ("")} style={{marginBottom:2}}>Clear</Btn>}
+            <div style={{fontSize:12,color:T.muted,paddingBottom:12,marginLeft:"auto"}}>
+              {count(shownParents.length,"parent")}{shownParents.length!==parents.length&&` of ${parents.length}`}
+            </div>
+          </div>
           <Crd style={{padding:"26px"}}>
-            <table style={{width:"100%",borderCollapse:"collapse"}}>
-              <thead><tr>{["Parent","Relation","Children","Email","Phone","Actions"].map(h=><th key={h} style={{textAlign:"left",padding:"9px 12px",fontSize:11,color:T.muted,fontWeight:700,textTransform:"uppercase",letterSpacing:".7px",borderBottom:`2px solid ${T.border}`}}>{h}</th>)}</tr></thead>
-              <tbody>{parents.map(p=>{
+            <table style={{width:"100%",borderCollapse:"collapse",...scrollTable}}>
+              <thead style={scrollRows}><tr>{["Parent","Relation","Children","Email","Phone","Actions"].map((h,i,arr)=><th key={h} style={{...(i===arr.length-1?stickyHead:null),textAlign:"left",padding:"9px 12px",fontSize:11,color:T.muted,fontWeight:700,textTransform:"uppercase",letterSpacing:".7px",borderBottom:`2px solid ${T.border}`}}>{h}</th>)}</tr></thead>
+              <tbody style={scrollRows}>{shownParents.map(p=>{
                 /**
                  * Every child, not the first one.
                  *
@@ -6533,7 +6676,7 @@ const AdminPortal=({user,db,setDb,onLogout,onReload})=>{
                     </td>
                     <td style={{padding:"12px",fontSize:13,color:T.muted}}>{p.email}</td>
                     <td style={{padding:"12px",fontSize:13,color:T.muted}}>{p.phone}</td>
-                    <td style={{padding:"12px"}}>
+                    <td style={{padding:"12px",...stickyCol}}>
                       <div style={{display:"flex",gap:6,alignItems:"center"}}>
                         <span onClick={()=>setEditing({type:"Parent",record:p})} style={{cursor:"pointer"}}><Bdg label="Edit" color={T.forest} bg={`${T.forest}15`}/></span>
                         {p.userId&&<span onClick={()=>resetPw(p)} style={{cursor:resetting===p.userId?"wait":"pointer"}}><Bdg label={resetting===p.userId?"…":"Reset PW"} color={T.warning} bg={`${T.warning}15`}/></span>}
@@ -6544,6 +6687,11 @@ const AdminPortal=({user,db,setDb,onLogout,onReload})=>{
                 );
               })}</tbody>
             </table>
+            {!shownParents.length&&(
+              <div style={{padding:"26px 6px",textAlign:"center",fontSize:13,color:T.muted}}>
+                {parents.length?"No parents match that search.":"No parents yet."}
+              </div>
+            )}
           </Crd>
         </div>
       )}
@@ -6659,6 +6807,7 @@ const AdminPortal=({user,db,setDb,onLogout,onReload})=>{
                 <div style={{display:"flex",gap:8,alignItems:"center"}}>
                   <span {...pressable(()=>setEditNotice(n),`Edit notice: ${n.title}`)}
                     style={{cursor:"pointer"}}>
+          onPurged={name=>{setPNote(`${name} deleted permanently.`);onReload?.();}}
                     <Bdg label="Edit" color={T.forest} bg={`${T.forest}15`}/>
                   </span>
                   <span {...pressable(()=>removeNotice(n),`Delete notice: ${n.title}`,{disabled:noticeBusy===n.id})}
@@ -7860,7 +8009,7 @@ const ParentPortal=({user,db,onLogout,onReload})=>{
             <p style={{color:T.muted,fontSize:14,marginTop:5}}>Here's everything about <b>{student.name}</b>'s academic journey.</p>
           </div>
           <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:14,marginBottom:20}}>
-            <KPI label="GPA" value={student.gpa} color={T.forest} icon="◈" sub="Current semester"/>
+            <KPI label="Average" value={`${student.average}%`} color={T.forest} icon="◈" sub="Across all subjects"/>
             {/* A child with nothing marked has no position — the same rule the
                 result card applies. Showing "#0 of 5" was the old bug, and
                 showing "#4 of 5" beside a blank card was the older one. */}
@@ -8111,15 +8260,14 @@ const ParentPortal=({user,db,onLogout,onReload})=>{
             </Crd>
             <div style={{display:"flex",flexDirection:"column",gap:14}}>
               <Crd style={{padding:"26px",background:G(T.forest,T.green),border:"none"}}>
-                <div style={{fontSize:10,color:"rgba(255,255,255,.5)",fontWeight:700,letterSpacing:"1.5px",textTransform:"uppercase",marginBottom:5}}>Current GPA</div>
-                {/* Standing and progress read from the real rank and GPA; this
+                <div style={{fontSize:10,color:"rgba(255,255,255,.5)",fontWeight:700,letterSpacing:"1.5px",textTransform:"uppercase",marginBottom:5}}>Current Average</div>
+                {/* Standing and progress read from the real rank and average; this
                     claimed "Top 10% of class" and a fixed 82% bar for everyone. */}
-                <div style={{fontFamily:"Georgia,serif",fontSize:52,fontWeight:800,color:"#fff",lineHeight:1}}>{student.gpa}</div>
+                <div style={{fontFamily:"Georgia,serif",fontSize:52,fontWeight:800,color:"#fff",lineHeight:1}}>{student.average}%</div>
                 <div style={{fontSize:13,color:"rgba(255,255,255,.6)",marginTop:8}}>
                   {student.rank&&student.classSize?`Ranked #${student.rank} of ${student.classSize} in class`:"Class rank not available yet"}
                 </div>
-                <div style={{marginTop:14,height:4,background:"rgba(255,255,255,.15)",borderRadius:99,overflow:"hidden"}}><div style={{height:"100%",width:`${Math.min(100,Math.round((student.gpa/4)*100))}%`,background:T.mint,borderRadius:99}}/></div>
-                <div style={{fontSize:11,color:"rgba(255,255,255,.4)",marginTop:4}}>{Math.min(100,Math.round((student.gpa/4)*100))}% toward 4.0 GPA</div>
+                <div style={{marginTop:14,height:4,background:"rgba(255,255,255,.15)",borderRadius:99,overflow:"hidden"}}><div style={{height:"100%",width:`${Math.min(100,student.average)}%`,background:T.mint,borderRadius:99}}/></div>
               </Crd>
               <Crd style={{padding:"22px"}}>
                 <div style={{fontSize:13,fontWeight:700,color:T.ink,marginBottom:12}}>All Assessments</div>
@@ -8468,13 +8616,13 @@ const ParentPortal=({user,db,onLogout,onReload})=>{
                 <div style={{fontFamily:"Georgia,serif",fontSize:19,fontWeight:700,color:T.ink}}>{student.name}</div>
                 <div style={{fontSize:12,color:T.muted,marginTop:4}}>{student.grade} · Section {student.section}</div>
                 <div style={{display:"flex",justifyContent:"center",gap:8,marginTop:12}}>
-                  <Bdg label={`GPA ${student.gpa}`} color={T.success} bg={`${T.success}15`}/>
+                  <Bdg label={`${student.average}% average`} color={T.success} bg={`${T.success}15`}/>
                   {student.rank?<Bdg label={`Rank #${student.rank}`} color={T.purple} bg={`${T.purple}15`}/>:null}
                 </div>
               </Crd>
               <Crd style={{padding:"22px"}}>
                 <div style={{fontSize:13,fontWeight:700,color:T.ink,marginBottom:12}}>Academic Info</div>
-                {[["Roll No.",student.roll],["Grade",`${student.grade} · ${student.section}`],["GPA",`${student.gpa} / 4.0`],["Rank",student.rank?`#${student.rank} of ${student.classSize}`:"Not ranked yet"],["Subjects",String(student.subjects.length)],["AI Score",`${student.aiScore} / 100`]].map(([l,v])=>(
+                {[["Roll No.",student.roll],["Grade",`${student.grade} · ${student.section}`],["Average",`${student.average}%`],["Rank",student.rank?`#${student.rank} of ${student.classSize}`:"Not ranked yet"],["Subjects",String(student.subjects.length)],["AI Score",`${student.aiScore} / 100`]].map(([l,v])=>(
                   <div key={l} style={{display:"flex",justifyContent:"space-between",padding:"8px 0",borderBottom:`1px solid ${T.border}`}}>
                     <span style={{fontSize:12,color:T.muted}}>{l}</span><span style={{fontSize:12,fontWeight:600,color:T.ink}}>{v}</span>
                   </div>

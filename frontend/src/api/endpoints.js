@@ -173,6 +173,7 @@ export const students = {
   /** The recycle bin. Deletes are soft, so a removed record can come back. */
   deleted: (params) => http.get("/students/deleted", params),
   restore: (id) => http.post(`/students/${id}/restore`),
+  purge: (id) => http.delete(`/students/${id}/purge`),
 };
 
 export const teachers = {
@@ -184,6 +185,7 @@ export const teachers = {
   remove: (id) => http.delete(`/teachers/${id}`),
   deleted: (params) => http.get("/teachers/deleted", params),
   restore: (id) => http.post(`/teachers/${id}/restore`),
+  purge: (id) => http.delete(`/teachers/${id}/purge`),
 };
 
 export const parents = {
@@ -195,6 +197,7 @@ export const parents = {
   remove: (id) => http.delete(`/parents/${id}`),
   deleted: (params) => http.get("/parents/deleted", params),
   restore: (id) => http.post(`/parents/${id}/restore`),
+  purge: (id) => http.delete(`/parents/${id}/purge`),
 };
 
 export const subjects = {

@@ -104,7 +104,6 @@ describe("the result card payload", () => {
     expect(d.student).toHaveProperty("section");
     expect(d.student).toHaveProperty("rollNo");
     // the three figures at the top of the card
-    expect(d).toHaveProperty("gpa");
     expect(d).toHaveProperty("average");
     // subjects table
     expect(Array.isArray(d.subjects)).toBe(true);

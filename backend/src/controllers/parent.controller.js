@@ -39,7 +39,20 @@ export const listParents = asyncHandler(async (req, res) => {
       take: limit,
       orderBy: { name: "asc" },
       include: {
-        students: { select: { id: true, name: true, grade: true, section: true, rollNo: true } },
+        /**
+         * Removed children are removed here too.
+         *
+         * The soft-delete extension only rewrites a query's *top-level* where, so
+         * a student reached through a relation arrives whatever their deletedAt
+         * says. A child sent to the recycle bin therefore kept showing on the
+         * parents screen as a live pupil, with their grade and roll number, and
+         * was still counted in childrenCount. Every _count of students in this
+         * codebase already spells this filter out; these includes did not.
+         */
+        students: {
+          where: { deletedAt: null },
+          select: { id: true, name: true, grade: true, section: true, rollNo: true },
+        },
         user: { select: { id: true, email: true, isActive: true, lastLoginAt: true } },
         institute: { select: { id: true, name: true } },
       },
@@ -56,12 +69,13 @@ export const listParents = asyncHandler(async (req, res) => {
 
 /** GET /api/parents/:id */
 export const getParent = asyncHandler(async (req, res) => {
-  // This year only: a GPA averaged across two years is a number about nothing.
+  // This year only: an average taken across two years is about nothing.
   const sessionId = await readSessionId(req.instituteId);
   const parent = await prisma.parent.findFirst({
     where: { id: req.params.id, ...(req.instituteId && { instituteId: req.instituteId }) },
     include: {
       students: {
+        where: { deletedAt: null },
         include: {
           enrollments: { where: sessionFilter(sessionId), select: { currentScore: true } },
           feeInvoices: { where: { status: { in: ["PENDING", "OVERDUE"] } } },
@@ -93,7 +107,6 @@ export const getParent = asyncHandler(async (req, res) => {
       grade: s.grade,
       section: s.section,
       rollNo: s.rollNo,
-      gpa: grading.gpa(s.enrollments),
       average: averageScore(s.enrollments),
       duesOutstanding: outstandingTotal(s.feeInvoices),
       enrollments: undefined,
@@ -155,7 +168,6 @@ export const myChildren = asyncHandler(async (req, res) => {
         rollNo: s.rollNo,
         photoUrl: s.photoUrl,
         institute: s.institute,
-        gpa: grading.gpa(s.enrollments),
         average: averageScore(s.enrollments),
         subjectCount: s.enrollments.length,
         attendance: attendanceSummary(attendance),
@@ -343,4 +355,46 @@ export const restoreParent = asyncHandler(async (req, res) => {
 
   audit(req, { action: "parent.restore", entity: "Parent", entityId: parent.id });
   return ok(res, null, `${parent.name} restored. Re-link their children as needed.`);
+});
+
+/**
+ * DELETE /api/parents/:id/purge — destroy a removed parent for good.
+ *
+ * The recycle bin only ever hid the row. Everything about them stayed exactly
+ * where it was, which is what let a restore be honest. This is the other door,
+ * and it is the only one in the product that really loses something.
+ *
+ * It refuses anyone who is not already in the bin, so this cannot be reached
+ * from the parents list by mistake, and it counts what it is about to destroy so the
+ * confirmation can name the real cost instead of warning in the abstract.
+ */
+export const purgeParent = asyncHandler(async (req, res) => {
+  const parent = await prismaRaw.parent.findFirst({
+    where: { id: req.params.id, instituteId: req.instituteId },
+    select: {
+      id: true, name: true, deletedAt: true, userId: true,
+      _count: { select: { students: true } },
+    },
+  });
+
+  if (!parent) throw ApiError.notFound("Parent not found");
+  if (!parent.deletedAt) {
+    throw ApiError.badRequest(
+      `${parent.name} is still on the parents list. Remove them first — permanent deletion only applies to the recycle bin.`
+    );
+  }
+
+  // Removal already unlinked the children; they stay enrolled either way. What
+  // goes here is the guardian and their login.
+  const destroyed = { childrenUnlinked: parent._count.students };
+  await prismaRaw.$transaction(async (tx) => {
+    await tx.parent.delete({ where: { id: parent.id } });
+    if (parent.userId) await tx.user.delete({ where: { id: parent.userId } });
+  });
+
+  audit(req, {
+    action: "parent.purge", entity: "Parent", entityId: parent.id,
+    meta: { name: parent.name, ...destroyed },
+  });
+  return ok(res, destroyed, `${parent.name} has been deleted permanently.`);
 });

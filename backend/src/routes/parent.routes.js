@@ -12,6 +12,9 @@ router.get("/me/children", authorize("PARENT"), ctrl.myChildren);
 
 router.get("/deleted", authorize("SUPERADMIN", "ADMIN"), requireInstitute, ctrl.listDeletedParents);
 router.post("/:id/restore", authorize("SUPERADMIN", "ADMIN"), requireInstitute, ctrl.restoreParent);
+// The one endpoint that actually destroys something. It only accepts records
+// already in the recycle bin, so the roster cannot reach it by mistake.
+router.delete("/:id/purge", authorize("SUPERADMIN", "ADMIN"), requireInstitute, ctrl.purgeParent);
 
 router.get("/", authorize("SUPERADMIN", "ADMIN", "TEACHER"), scopeToInstitute, ctrl.listParents);
 router.get("/:id", authorize("SUPERADMIN", "ADMIN", "TEACHER"), scopeToInstitute, ctrl.getParent);

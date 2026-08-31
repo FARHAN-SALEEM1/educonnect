@@ -95,15 +95,5 @@ export const gradingFor = (institute) => {
   const passed = (score) =>
     score === null || score === undefined ? null : score >= passingPercentage;
 
-  /** Unweighted GPA on this school's own points. */
-  const gpa = (enrollments = []) => {
-    const scored = enrollments.filter(
-      (e) => e.currentScore !== null && e.currentScore !== undefined
-    );
-    if (!scored.length) return 0;
-    const total = scored.reduce((sum, e) => sum + gradePoint(e.currentScore), 0);
-    return Number((total / scored.length).toFixed(2));
-  };
-
-  return { bands, passingPercentage, letterGrade, gradePoint, passed, gpa };
+  return { bands, passingPercentage, letterGrade, gradePoint, passed };
 };

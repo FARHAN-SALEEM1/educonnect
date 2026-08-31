@@ -916,14 +916,252 @@ orderBy date, student.name   19 ms
 Nau milliseconds. Us ke liye din ke register ko naam ki tarteeb mein padhna chhorna
 bemani tha, so wo sorting wapas hai.
 
+### Frontend — asli qeemat yahan mili
+
+API tez tha, magar browser ka hisaab alag nikla. `useDb.js` portal khulte hi
+`fetchAll(api.students.list)` chalata hai — har page, poora cohort. 1,200 bachon par:
+
+```
+page 1: 771 KB  ×  6 pages  ≈  4,630 KB har portal load par
+```
+
+Har student ke sath 3,941 bytes ja rahe the:
+
+```
+subjects  1783      fees  1216      weekAttendance  336
+institute   96      attendance 65      naam/roll/grade ~60
+```
+
+Yani jo list row waqai dikhata hai, wo payload ka 3% tha. Do cheezein bilkul be-maqsad thin.
+
+**`weekAttendance` — banti thi, bheji jati thi, koi nahi parhta tha.** Poori `App.jsx` mein
+`weekAtt` sirf ek jagah parha jata hai (ParentPortal), aur parent portal apna data
+`api.students.get(id)` — detail endpoint — se leta hai (`useDb.js` line 182,
+`toLegacyStudentFull`). List wali copy kabhi kisi screen tak pahunchti hi nahi thi.
+
+**`fees` — bara payload, aur ghalat jawab.** Roster ka badge ye poochta tha:
+
+```js
+s.fees.some(f => f.status === "pending") ? "Pending" : "Paid"
+```
+
+Is ek badge ke liye list har student ke sath baarah poore challan bhejti thi. Aur jawab
+phir bhi ghalat tha: enum mein `PENDING` aur `OVERDUE` **dono** paise wajib hain
+(`utils/fees.js`, `isOutstanding`), magar OVERDUE `"pending"` ke barabar nahi — **to jis
+khandaan ko daftar ne sab se pehle dekhna hota hai, us ka row "Paid" kehta tha.** Nakami
+mehfooz taraf ishara karti thi, isi liye kisi ki nazar nahi pari.
+
+Jawab pehle se usi row par mojood tha: `duesOutstanding`, jo server apni alag chhoti query
+se PENDING + OVERDUE balances jama karta hai.
+
+```
+purana:  fees.some(status === "pending")  ->  "Paid"
+naya:    dues > 0                         ->  "Pending"
+```
+
+### Natija — payload aadha
+
+```
+fi student:        3,941 -> 2,079 bytes   (47% kam)
+page 1:              771 KB -> 464 KB
+har portal load:   4,630 KB -> 2,784 KB   (~1.8 MB bachat)
+```
+
+List ka `feeInvoices` include bhi gaya, to database ka kaam bhi kam hua. 877/877 tests
+pass; `tests/overdue.test.js` mein do naye tests ise pin karte hain.
+
+### Jo bacha hai, us ka 86% `subjects` hai
+
+2,079 bytes mein se 1,783 `subjects` ke hain. Ye kaatna utna aasan nahi: teacher portal
+har student par apna subject dhoondta hai — `App.jsx`,
+`s.subjects.find(x => x.teacherId === teacher.id)`. Is ke liye ya to list sirf poochne
+wale teacher ka subject bheje, ya teacher portal apni roster alag endpoint se le. Dono
+asal kaam hain, andaza nahi — is liye ye **naapa hua** chhor raha hoon, **kiya hua** nahi.
+
 ### Jo ab bhi naapa nahi gaya
 
-- **Frontend** us data ke sath — probe API ka waqt leta hai, browser ka nahi. 1,200 rows
-  ki table React mein kaisi chalti hai, wo alag sawal hai.
+- **React ka apna waqt** — payload naapa gaya, render nahi. 1,200 rows ki table browser
+  mein kitni der leti hai, wo alag sawal hai.
 - **Concurrent load** — ek waqt mein ek request naapi gayi. Subah 8 baje pandra teacher
   ek sath register kholte hain, wo alag cheez hai.
 - **auditLog ka barhna** — 55,000+ rows par ek `count()` aaj timeout kar chuka hai
   (section 13).
+
+---
+
+## 6t. TEEN CHEEZEIN JO USER NE PAKRIN (2026-08-31)
+
+### 🔴 1. "Parent delete pe click hi nahi hota"
+
+Pehle sab kuch theek nikla: backend `DELETE /api/parents/:id` → 200, `pressable` durust,
+`removeRow` jura hua, aur browser mein ✕ dabate hi 200 aur list 6 se 5. To shikayat kis
+cheez ki thi?
+
+Naap kar dekha:
+
+```
+ 700px  →  display:block, table apna scroll region, Actions pahunch mein
+ 900px  →  display:table, table 947px chauri, viewport 900
+           actionsRight = 900, visible = FALSE, aur koi scrollbar nahi
+1280px  →  overflow hi nahi, sab theek
+```
+
+A§9 tables ko **768px se neeche** scroll region banata hai. Us breakpoint aur ~1100px ke
+darmiyan table page se chaura tha magar scroll region **nahi** tha — yani aakhri column
+seedha kat jata tha aur us tak pahunchne ka koi raasta nahi hota. **Aam laptop par delete
+button ka wajood hi nahi tha.** "Click nahi hota" bilkul durust bayan tha; button wahan tha
+hi nahi jahan dekha ja raha tha.
+
+Do cheezein lagayin, aur dono zaroori hain:
+
+- `scrollTable` — students aur parents tables **har chaurai par** apna overflow khud
+  sambhalti hain, sirf phone par nahi.
+- `stickyCol` — Actions column right edge par pinned, opaque background ke sath (warna
+  scroll hoti columns us mein se aar-paar dikhtin).
+
+### 2. Recycle Bin mein permanent delete
+
+Bin pehle se maujood tha aur Restore chalta tha; jo nahi tha wo hamesha ke liye hatane ka
+raasta. Us modal ka apna comment kehta tha ke ye **jaan boojh kar** nahi rakha gaya. User
+ne maanga, to faisla palta — magar mehfooz tareeqe se.
+
+Backend mein teen naye endpoints (pehle sirf institutes ke liye purge tha):
+
+```
+DELETE /api/students/:id/purge      DELETE /api/teachers/:id/purge
+DELETE /api/parents/:id/purge
+```
+
+Har ek do baaton par ada'a karta hai: record **pehle se bin mein ho** (warna 400, taake
+roster se ye door khule hi nahi), aur **apne hi institute ka ho** (warna 404). Jo tabah
+hota hai wo ginti ke sath wapas aata hai, taake confirmation asli qeemat bata sake:
+
+```
+student → enrollments, attendance, feeInvoices  (Cascade)
+teacher → subjects aur periods bacha rehte hain, unassigned; login jata hai
+parent  → bachay pehle hi unlink ho chuke; guardian aur login jate hain
+```
+
+UI mein browser `confirm` nahi — row apni jagah poochta hai: **"Delete for good? [Yes,
+delete] [Keep]"**. Sawal usi record se chipka rehta hai jis ke bare mein hai.
+
+Bin ka intro bhi theek kiya: ab "kept, not destroyed" ke bajaye dono darwaze bayan karta
+hai.
+
+`tests/softdelete.test.js` mein chaar tests — aur guard hata kar sabit kiya ke pehla test
+waqai fail hota hai.
+
+### 3. GPA/CGPA nikal diya — Pakistani schools percentage chalate hain
+
+User: *"schools colleges mein gpa nai chalta, percentage chalti hai."* Durust hai, aur
+poore product se nikal diya — sirf chhupaya nahi.
+
+```
+frontend  13 maqamat  →  percentage (average)
+backend    8 response fields, grading.js ka gpa(), academics.js ka calculateGpa()
+tests      2 describes hataye, 2 assertions, 1 test ka naam
+```
+
+Har us jagah `average` pehle se maujood tha jahan `gpa` tha, is liye badalna saaf raha.
+Parent portal ka bara card ab "Current Average" hai aur us ka progress bar 100 ki taraf
+jata hai, `4.0` ki taraf nahi.
+
+**Letter grades nahi hatai gayin** — A+, A, B asli Pakistani result card par chalte hain,
+aur school ki apni bands `gradingFor(institute)` se aati hain (section 6f). Sirf grade
+points ka *average* gaya, bands nahi.
+
+---
+
+## 6s. ROSTER SEARCH — aur jo us ne nikala (2026-08-31)
+
+Sawal saada tha: *"admin ke paas student ya parent search karne ka option hona chahiye
+ya nahi?"*
+
+Jawab dene se pehle dekha ke hai kya. Students aur Parents tabs par **teen buttons, phir
+poori table** — koi search nahi, koi filter nahi, **koi pagination nahi**. 1,200 bachon
+wale school mein ek bachay tak pahunchne ka tareeqa browser ka Ctrl+F tha. Poori app mein
+search sirf ek jagah thi: Classes screen (`App.jsx:4030`), aur wahan theek bani hui thi.
+
+Aur backend mein search **pehle se maujood** thi, dono jagah:
+
+```
+GET /students   name · rollNo · code        (case-insensitive)
+GET /parents    name · email · phone · code
+```
+
+Sirf UI se koi poochta nahi tha.
+
+### Client-side, server-side nahi — aur kyun
+
+Pehla mashwara server-side ka tha, is dalil par ke payload bhi theek ho jayega. **Wo
+jaldbazi thi.** `useDb` portal khulte hi poora cohort utha leta hai kyunke reports,
+register aur parent lookups samet **63 jagah** `db.students` parhti hain. Us soorat mein
+server-side search payload kam nahi karti — ulta har keystroke par ek extra request bhi
+jorti hai, aur students ka doosra source of truth bana deti hai.
+
+Rows pehle se haath mein hain, is liye filter wahin hota hai: fori, bina network ke, bina
+debounce ke, aur mutations ka `onReload` pehle se kaam karta hai. Agar kabhi roster ne
+poora set lena chhor diya, to ye `search` parameter par chala jayega jo dono endpoints
+pehle se qubool karte hain.
+
+### 🔴 Aur is ne ek asli bug nikala — Recycle Bin ka bacha, live roster par
+
+Grade dropdown mein sirf "Grade 10" tha, magar Parents screen par **Ayesha Khan · Grade 9 B
+· Roll 2024-092** ek parent ki child bani hui thi. Database: wo **26 August se soft-deleted
+thi**.
+
+Wajah wahi jo is codebase ko teen dafa kaat chuki hai — soft-delete extension query ka
+sirf **top-level `where`** badalta hai. Relation ke zariye aane wala student jo bhi
+`deletedAt` rakhta ho, aa jata hai. Is codebase mein students ka **har `_count`** ye filter
+khud likhta hai; parent ke includes mein reh gaya tha:
+
+```
+parent.controller.js:42    listParents   -> roster par live bacha, aur childrenCount bhi ghalat
+parent.controller.js:64    getParent     -> parent detail
+dashboard.controller.js:480 parent dash  -> guardian ke apne portal par
+```
+
+Teenon par `where: { deletedAt: null }` laga. `tests/removedstudent.test.js` mein teen
+tests ise pin karte hain — aur fix hata kar sabit kiya gaya ke **teenon fail hote hain**.
+
+**Ulta case check kiya, wahan bug nahi.** `deleteParent` pehle bachon ko unlink karta hai
+(`parentId: null`), phir parent ko soft-delete, phir uska login band. Is liye koi student
+kisi deleted parent ki taraf ishara kar hi nahi sakta, aur fee reminder bhi
+`parent.user.isActive` dekhta hai. Yani filter sirf `Parent -> students` ko chahiye tha:
+**parent hataane par link tootta hai, student hataane par nahi** — taake restore chale.
+
+### Ek nafa jo saath aaya
+
+Roster ka fee badge `s.fees.some(f => f.status === "pending")` poochta tha. Ab
+`dues > 0` — jo `duesOutstanding` se aata hai. Tafseel section 6r mein.
+
+### ⚠ Aur ek cheez, jo test ne nahi, *guard* ne pakri
+
+Kaam ke beech `reportcard.test.js` fail hua: *"beforeAll did not complete — every test in
+this file is vacuous"*. Ye wahi guard hai jo 33 files mein lagaya gaya tha.
+
+Ye code ka regression nahi tha. Demo school ka data badal gaya tha — ek `PATCH
+/api/parents/:id` (audit: `parent.update`, `admin@bhs.edu`, 09:23:26 UTC) ne **paanchon
+live students ek hi parent par daal diye the**. Sara Ahmed ke paas koi bacha nahi bacha,
+aur us file ka fixture `sara@gmail.com` ke ek *marked* bachay par khara hai — to `beforeAll`
+ruk gaya.
+
+Suite ke wo 16 specs jo demo school par chalte hain, sab check kiye: **koi bhi parent PATCH
+nahi karta**. Ye suite ne nahi kiya.
+
+Links `prisma/seed.js` ke mutabiq wapas lagaye gaye (`parentCode`), aur haath se banaye
+gaye do students unki pichhli jagah par:
+
+```
+STU001 Zain Ahmed   -> Sara Ahmed          (seed)
+STU003 Bilal Raza   -> Nida Raza           (seed)
+STU004 Hania Malik  -> Nida Raza           (seed)
+STU007 Fatima       -> Sara Ahmed
+STU006 shanawar b.  -> saleem iqbal bhatti
+```
+
+> **Sabaq:** guard ne theek wahi kiya jis ke liye banaya gaya tha. Us ke baghair us file ke
+> 16 tests khamoshi se hare tick dikhate rehte, jabke unmein se koi bhi chala hi nahi tha.
 
 ---
 

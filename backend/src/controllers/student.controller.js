@@ -85,7 +85,7 @@ export const listStudents = asyncHandler(async (req, res) => {
    * The year this list is about.
    *
    * Every figure the list carries — a student's subjects, their average,
-   * their GPA, their position — is a statement about one year. Averaged
+   * their position — is a statement about one year. Averaged
    * across two, none of them mean anything.
    */
   const sessionId = await readSessionId(req.instituteId);
@@ -141,7 +141,6 @@ export const listStudents = asyncHandler(async (req, res) => {
           },
         },
         institute: { select: { id: true, name: true, code: true } },
-        feeInvoices: { orderBy: { period: "desc" }, take: 12 },
       },
     }),
   ]);
@@ -258,7 +257,6 @@ export const listStudents = asyncHandler(async (req, res) => {
       parent: s.parent,
       institute: s.institute,
 
-      gpa: grading.gpa(s.enrollments),
       average: averageScore(s.enrollments),
       rank: rankByStudent.get(s.id) ?? null,
       classSize: classSizeByStudent.get(s.id) ?? 0,
@@ -280,16 +278,6 @@ export const listStudents = asyncHandler(async (req, res) => {
       })),
 
       attendance: attendanceSummary(records),
-      weekAttendance: records
-        .slice(0, 5)
-        .reverse()
-        .map((a) => ({
-          date: a.date,
-          day: DAY_LABELS[new Date(a.date).getDay()],
-          status: a.status,
-        })),
-
-      fees: s.feeInvoices,
       duesOutstanding: duesByStudent.get(s.id) ?? 0,
     };
   });
@@ -457,7 +445,6 @@ export const getStudent = asyncHandler(async (req, res) => {
     institute: student.institute,
     parent: student.parent,
 
-    gpa: grading.gpa(student.enrollments),
     average: averageScore(student.enrollments),
     // No marks, no position — the same rule the result card applies, so the
     // two screens stop disagreeing about the same child. See the list above.
@@ -954,7 +941,7 @@ export const studentReport = asyncHandler(async (req, res) => {
    *
    * A Pakistani result card reports a term: it carries that term's marks and
    * nothing else. Asked for a term, every figure below — each subject's score,
-   * the average, the GPA, the overall grade and the position — comes from that
+   * the average, the overall grade and the position — comes from that
    * term's assessments alone. Asked for nothing, the card behaves exactly as it
    * did before terms existed and reports the rolled-up `currentScore`, so no
    * existing caller changes behaviour.
@@ -997,7 +984,7 @@ export const studentReport = asyncHandler(async (req, res) => {
         ? weightedAverage(enrollment.assessments, terms).score
         : enrollment.currentScore;
 
-  /** The enrolments shaped the way averageScore and the GPA reader read them. */
+  /** The enrolments shaped the way averageScore reads them. */
   const termScores = student.enrollments.map((e) => ({ currentScore: scoreFor(e) }));
 
   /**
@@ -1195,7 +1182,6 @@ export const studentReport = asyncHandler(async (req, res) => {
           };
         })()
       : null,
-    gpa: termHasMarks ? grading.gpa(term ? termScores : student.enrollments) : null,
     average: termHasMarks ? averageScore(termScores) : null,
 
     /**
@@ -1563,4 +1549,46 @@ export const studentPromotions = asyncHandler(async (req, res) => {
   });
 
   return ok(res, history);
+});
+
+/**
+ * DELETE /api/students/:id/purge — destroy a removed student for good.
+ *
+ * The recycle bin only ever hid the row. Everything about them stayed exactly
+ * where it was, which is what let a restore be honest. This is the other door,
+ * and it is the only one in the product that really loses something.
+ *
+ * It refuses anyone who is not already in the bin, so this cannot be reached
+ * from the roster by mistake, and it counts what it is about to destroy so the
+ * confirmation can name the real cost instead of warning in the abstract.
+ */
+export const purgeStudent = asyncHandler(async (req, res) => {
+  const student = await prismaRaw.student.findFirst({
+    where: { id: req.params.id, instituteId: req.instituteId },
+    select: {
+      id: true, name: true, deletedAt: true,
+      _count: { select: { enrollments: true, attendance: true, feeInvoices: true } },
+    },
+  });
+
+  if (!student) throw ApiError.notFound("Student not found");
+  if (!student.deletedAt) {
+    throw ApiError.badRequest(
+      `${student.name} is still on the roster. Remove them first — permanent deletion only applies to the recycle bin.`
+    );
+  }
+
+  // Marks, registers and challans are the child's; they go with the child.
+  const destroyed = {
+    enrollments: student._count.enrollments,
+    attendance: student._count.attendance,
+    feeInvoices: student._count.feeInvoices,
+  };
+  await prismaRaw.student.delete({ where: { id: student.id } });
+
+  audit(req, {
+    action: "student.purge", entity: "Student", entityId: student.id,
+    meta: { name: student.name, ...destroyed },
+  });
+  return ok(res, destroyed, `${student.name} has been deleted permanently.`);
 });

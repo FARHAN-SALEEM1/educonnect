@@ -3,7 +3,6 @@ import {
   assessmentAverage,
   attendanceSummary,
   averageScore,
-  calculateGpa,
   classRank,
   gradePoint,
   letterGrade,
@@ -65,25 +64,8 @@ describe("gradePoint", () => {
     expect(gradePoint(10)).toBe(0);
   });
 
-  it("treats a missing score as 0 so it can't inflate a GPA", () => {
+  it("treats a missing score as 0, not as full marks", () => {
     expect(gradePoint(null)).toBe(0);
-  });
-});
-
-describe("calculateGpa", () => {
-  it("averages grade points across subjects", () => {
-    // A+ 4.0 + A+ 4.0 + A 3.7 = 11.7 / 3
-    expect(calculateGpa([{ currentScore: 90 }, { currentScore: 80 }, { currentScore: 70 }])).toBe(3.9);
-  });
-
-  it("ignores unscored subjects instead of counting them as zero", () => {
-    const withGap = calculateGpa([{ currentScore: 90 }, { currentScore: null }]);
-    expect(withGap).toBe(4.0);
-  });
-
-  it("returns 0 for a student with no scores at all", () => {
-    expect(calculateGpa([])).toBe(0);
-    expect(calculateGpa([{ currentScore: null }])).toBe(0);
   });
 });
 
