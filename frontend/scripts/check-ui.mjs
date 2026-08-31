@@ -144,6 +144,22 @@ ok(
   "a raw {s.average}% is back in the table"
 );
 
+ok(
+  "the attendance summary is windowed too",
+  src.includes("summaryRows.slice(0,attShow)")
+);
+
+/**
+ * And it leaves out the children it has nothing to say about. A pupil admitted
+ * this week has no attendance to summarise, and an empty record read as 0% put
+ * every new arrival at the top of a list whose whole job is to surface the ones
+ * who are not turning up.
+ */
+ok(
+  "and lists only children with attendance behind them",
+  src.includes("students.filter(s=>s.att.days>0).sort((a,b)=>a.att.present-b.att.present)")
+);
+
 console.log("\n=== plurals a person would not write ===");
 
 /**

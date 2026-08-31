@@ -5769,6 +5769,22 @@ const AdminPortal=({user,db,setDb,onLogout,onReload})=>{
 
     const[cls,setCls]=useState(classes[0]?`${classes[0].grade}|${classes[0].section}`:"");
     const[date,setDate]=useState(todayISO());
+    const ATT_PAGE=25;
+    const[attShow,setAttShow]=useState(ATT_PAGE);
+
+    /**
+     * Who is actually missing school, worst first.
+     *
+     * A child admitted this week has no attendance to summarise, and their
+     * empty record read as 0% — which put every new arrival at the top of a
+     * list whose whole job is to surface absentees, above the children who
+     * are genuinely not turning up. They are left out rather than shown as
+     * zero, for the same reason the roster prints "—" for them.
+     */
+    const summaryRows=useMemo(
+      ()=>students.filter(s=>s.att.days>0).sort((a,b)=>a.att.present-b.att.present),
+      [students]
+    );
     const[register,setRegister]=useState(null);
     const[marks,setMarks]=useState({});
     const[loading,setLoading]=useState(false);
@@ -5903,14 +5919,24 @@ const AdminPortal=({user,db,setDb,onLogout,onReload})=>{
               )}
             </Crd>
             <Crd style={{padding:"22px"}}>
+              {/*
+                Worst attendance first, and only as many as fit.
+                This drew a bar for every student on the roll — two thousand of
+                them on a school that size — in whatever order the roster came
+                back in, which put the children who need chasing wherever they
+                happened to fall. The report of the same name sorts lowest
+                first for exactly this reason.
+              */}
               <div style={{fontSize:13,fontWeight:700,color:T.ink,marginBottom:14}}>Monthly Summary</div>
-              {!students.length&&<div style={{fontSize:12,color:T.muted}}>No students yet.</div>}
-              {students.map(s=>(
+              {!summaryRows.length&&<div style={{fontSize:12,color:T.muted}}>{students.length?"No attendance recorded yet.":"No students yet."}</div>}
+              {summaryRows.slice(0,attShow).map(s=>(
                 <div key={s.id} style={{marginBottom:12}}>
                   <div style={{display:"flex",justifyContent:"space-between",marginBottom:4}}><span style={{fontSize:12,color:T.muted}}>{s.name}</span><span style={{fontSize:12,fontWeight:700,color:s.att.present>=90?T.success:T.warning}}>{s.att.present}%</span></div>
                   <Bar val={s.att.present} color={s.att.present>=90?T.success:T.warning}/>
                 </div>
               ))}
+              <ShowMore shown={Math.min(attShow,summaryRows.length)} total={summaryRows.length} page={ATT_PAGE}
+                onMore={()=>setAttShow(n=>n+ATT_PAGE)} onAll={()=>setAttShow(summaryRows.length)}/>
             </Crd>
           </div>
         </div>
