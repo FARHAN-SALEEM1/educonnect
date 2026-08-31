@@ -989,6 +989,81 @@ asal kaam hain, andaza nahi — is liye ye **naapa hua** chhor raha hoon, **kiya
 
 ---
 
+## 6v. PHONE PAR ASLI APP — parent aur teacher ke liye (2026-08-31)
+
+User: *"parents and teacher have to use it on mobile phones, make it more responsive like a
+professional app."*
+
+Durust nishandehi. App phone par bhi desktop wali navigation de raha tha.
+
+### Kya masla tha
+
+```
+375px screen par:
+  icon rail                     64px   (17%)   — collapsed hone ke bawajood
+  main ki padding + page div    48px           — dono alag alag laga rahe the
+  bacha                        263px
+landing sections ki padding    128px           — screen ka 34%
+har grid ek column                             — chaar KPI cards = chaar screens
+```
+
+Aur rail screen ke **oopar-baayen** kone mein tha — us haath se sab se door jo phone
+pakre hue hai.
+
+### Kya kiya
+
+**Bottom tab bar, 640px se neeche.** Rail hat jata hai; chaar screens bar mein, baqi aur
+logout ek "More" sheet mein — kyunke nau targets wali bar par koi ungli theek nahi
+lagti. Content ko poori chaurai mil jati hai.
+
+```
+parent   Dashboard · Attendance · Grades · AI Insights · More
+teacher  Dashboard · My Classes · Grade Book · Attendance · More
+admin    Dashboard · Students · Teachers · Parents · More      (badges ke sath)
+```
+
+Deep links barqarar: sheet se Timetable dabane par `#/timetable` likha jata hai, to Back
+ab bhi screens se guzarta hai.
+
+**Chhote card rows jori mein.** Wo blanket rule jo phone par har grid ko ek column karta
+tha, KPI tiles par se hata — ek lafz aur ek number ke liye chaar screens dena bemani tha.
+
+**Landing aur page padding phone ke naap par.**
+
+```
+                    pehle    ab
+landing page      7.6 screens  6.0
+admin dashboard        —       3.4
+parent dashboard       —       2.0
+kaam ki chaurai      247px    300px  (landing) / poori (portals)
+```
+
+### Teen cheezein jo naapne se pakri gayin
+
+**`1fr` asal mein `minmax(auto,1fr)` hai.** Pehli jori mein columns `207px` aur `179px`
+bane — ek 247px ke box mein. Cards kat rahe the aur `overflow-x:hidden` usay chhupa raha
+tha. `minmax(0,1fr)` ne hal kiya.
+
+**Jori bana kar KPI tile ~100px ka reh jata hai**, aur us mein desktop ka padding aur 28px
+serif fit nahi hota — **"Growth" seedha card se bahar nikal raha tha**. Phone par tile
+compact hai aur sajawati glyph raaste se hat jata hai.
+
+**`main` ki koi apni padding nahi thi** jab tak ek mobile rule ne di — aur page div apni
+desktop wali 34px rakhe hue tha. Yani phone 48px per side de raha tha. Ab ek hi jagah
+padding hai, aur neeche bar ke liye jagah.
+
+### Jo aazma kar wapas kiya
+
+Landing ke feature cards jori mein daale the — 157px par wo **zyada tang aur zyada lambe**
+ho gaye, yani ulta natija. Poori chaurai par wapas.
+
+### Desktop bilkul nahi chhua
+
+Har rule 640px se neeche hai. 704px par rail ab bhi 64px ka hai, bottom bar mojood nahi,
+aur tiles par wahi `20px/22px` padding, 28px value aur icons — naap kar dekha.
+
+---
+
 ## 6u. DEPLOY SE PEHLE POORA AUDIT — 2,000 bachon par (2026-08-31)
 
 User: *"saare app check kro, responsive bnao, har cheez logical honi chahiye, 2000 bachay

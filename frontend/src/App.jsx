@@ -1184,10 +1184,11 @@ const BottomNav=({nav,tab,setTab,user,inst,onLogout})=>{
         {primary.map(n=>(
           <Item key={n.id} n={n} active={tab===n.id&&!more} onPick={()=>{setMore(false);setTab(n.id);}}/>
         ))}
-        {rest.length>0&&(
-          <Item n={{id:"__more",label:"More",icon:"⋯"}} active={more||(restHoldsTab&&!more)}
-            onPick={()=>setMore(m=>!m)}/>
-        )}
+        {/* Always drawn, even with nothing extra to hold: this is where Log out
+            lives, and a portal with four screens would otherwise strand a phone
+            with no way out. */}
+        <Item n={{id:"__more",label:"More",icon:"⋯"}} active={more||(restHoldsTab&&!more)}
+          onPick={()=>setMore(m=>!m)}/>
       </nav>
     </>
   );
