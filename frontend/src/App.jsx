@@ -1919,7 +1919,11 @@ const Signup=({onBack,onLogin})=>{
               <div style={{fontFamily:"Georgia,serif",fontSize:26,fontWeight:800,color:T.ink,marginBottom:12}}>Registration Successful!</div>
               <p style={{fontSize:14,color:T.muted,lineHeight:1.8,marginBottom:24}}>
                 <b>{f.name}</b> has been registered on EduConnect on the <b>{selPlan?.name}</b> plan.<br/>
-                Admin credentials have been sent to <b>{f.adminEmail}</b>.
+                {/* Signup sends no email — it never has. Telling a school its
+                    credentials were mailed sent them to wait for a message that
+                    was never going to arrive, and past the one screen that had
+                    the password on it. */}
+                Write these down before you leave this page — they are not emailed.
               </p>
               <div style={{background:T.paper,borderRadius:14,padding:"18px",marginBottom:28,textAlign:"left",border:`1px solid ${T.border}`}}>
                 <div style={{fontSize:11,fontWeight:700,color:T.muted,marginBottom:10,textTransform:"uppercase",letterSpacing:".5px"}}>Your Login Credentials</div>
