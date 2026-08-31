@@ -346,6 +346,8 @@ export const toLegacyStudentSummary = (s) => ({
   section: s.section,
   roll: s.rollNo,
   instId: s.institute?.id ?? s.instituteId ?? null,
+  // Null for a school with one campus, which is most of them.
+  branch: s.branch ? { id: s.branch.id, name: s.branch.name, code: s.branch.code } : null,
   parentId: s.parent?.id ?? s.parentId ?? null,
   parentName: s.parent?.name ?? null,
   phone: s.phone,

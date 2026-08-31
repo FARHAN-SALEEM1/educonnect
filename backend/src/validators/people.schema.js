@@ -13,6 +13,7 @@ export const createStudentSchema = z.object({
   address: z.string().trim().max(240).optional().nullable(),
   photoUrl: z.string().url().optional().nullable(),
   parentId: z.string().optional().nullable(),
+  branchId: z.string().optional().nullable(),
   status: z.enum(["ACTIVE", "INACTIVE", "GRADUATED", "TRANSFERRED"]).optional(),
   instituteId: z.string().optional(),
   /** Subject ids to enroll the student into immediately. */
@@ -107,6 +108,8 @@ export const studentQuery = z.object({
   section: z.string().optional(),
   status: z.enum(["ACTIVE", "INACTIVE", "GRADUATED", "TRANSFERRED"]).optional(),
   parentId: z.string().optional(),
+  // "" means every campus, which is what an unset filter should mean.
+  branchId: z.string().optional(),
   instituteId: z.string().optional(),
   sortBy: z.enum(["name", "rollNo", "grade", "createdAt"]).optional(),
   order: z.enum(["asc", "desc"]).optional(),

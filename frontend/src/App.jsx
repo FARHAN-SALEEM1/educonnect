@@ -4769,6 +4769,146 @@ const SlotModal=({slot,classes,subjects,teachers,onClose,onSaved})=>{
 
 const ADMIN_TABS=["dashboard","students","teachers","parents","classes","timetable","attendance","fees","messages","notices","reports","billing","settings"];
 
+/**
+ * Campuses, for the schools that have more than one.
+ *
+ * It lives in Settings rather than the navigation because most schools have a
+ * single building, and a fourteenth tab they never open is only noise. Every
+ * campus control elsewhere in the portal hides itself when this list is empty,
+ * so a school that never opens a second campus sees the product it had before.
+ *
+ * Closing a campus does not close the people on it: their campus goes blank and
+ * they stay on the roll. That is the honest state for a child whose building
+ * shut, and removing them is a different button on a different screen.
+ */
+const CampusesCard=({onChanged})=>{
+  const[rows,setRows]=useState(null);
+  const[err,setErr]=useState("");
+  const[note,setNote]=useState("");
+  const[busy,setBusy]=useState("");
+  const[form,setForm]=useState(null);      // {} for a new one, or the campus being edited
+  const[confirming,setConfirming]=useState("");
+
+  const load=async()=>{
+    setErr("");
+    try{ setRows(await api.branches.list()); }
+    catch(e){ setErr(e.message||"Could not read the campuses."); setRows([]); }
+  };
+  useEffect(()=>{load();},[]);
+
+  const flash=m=>{setNote(m);setTimeout(()=>setNote(""),3500);};
+
+  const save=async()=>{
+    const body={
+      name:(form.name||"").trim(),
+      code:(form.code||"").trim(),
+      city:(form.city||"").trim()||null,
+      isMain:!!form.isMain,
+    };
+    if(body.name.length<2||body.code.length<2){setErr("A campus needs a name and a short code.");return;}
+    setBusy("save");setErr("");
+    try{
+      if(form.id) await api.branches.update(form.id,body);
+      else await api.branches.create(body);
+      setForm(null);
+      await load();
+      onChanged?.();
+      flash(form.id?`${body.name} updated.`:`${body.name} added.`);
+    }catch(e){ setErr(e.message||"Could not save the campus."); }
+    finally{ setBusy(""); }
+  };
+
+  const close=async b=>{
+    setBusy(b.id);setErr("");
+    try{
+      const gone=await api.branches.remove(b.id);
+      setConfirming("");
+      await load();
+      onChanged?.();
+      const n=(gone?.students??0)+(gone?.teachers??0);
+      flash(n?`${b.name} closed — ${count(n,"person","people")} now have no campus.`:`${b.name} closed.`);
+    }catch(e){ setErr(e.message||"Could not close the campus."); }
+    finally{ setBusy(""); }
+  };
+
+  return(
+    <Crd style={{padding:"26px"}}>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6}}>
+        <div style={{fontSize:14,fontWeight:700,color:T.ink}}>Campuses</div>
+        {!form&&<Btn out color={T.forest} onClick={()=>{setForm({});setErr("");}}>+ Add Campus</Btn>}
+      </div>
+      <div style={{fontSize:12,color:T.muted,lineHeight:1.7,marginBottom:16}}>
+        For a school that runs more than one building. Students and teachers can be
+        assigned to a campus, and the roster filtered down to it. Leave this empty if
+        you have one campus — nothing else changes.
+      </div>
+
+      {note&&<div style={{background:`${T.success}12`,color:T.success,borderRadius:10,padding:"9px 13px",fontSize:12.5,marginBottom:12}}>{note}</div>}
+      {err&&<div style={{background:`${T.danger}12`,color:T.danger,borderRadius:10,padding:"9px 13px",fontSize:12.5,marginBottom:12}}>{err}</div>}
+
+      {form&&(
+        <div style={{border:`1px solid ${T.border}`,borderRadius:12,padding:"14px",marginBottom:14,background:T.paper}}>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 120px",gap:10}}>
+            <Inp label="Campus name" value={form.name??""} onChange={e=>setForm(f=>({...f,name:e.target.value}))} placeholder="e.g. Gulberg Campus" style={{marginBottom:0}}/>
+            <Inp label="Code" value={form.code??""} onChange={e=>setForm(f=>({...f,code:e.target.value}))} placeholder="GLB" style={{marginBottom:0}}/>
+          </div>
+          <Inp label="City" value={form.city??""} onChange={e=>setForm(f=>({...f,city:e.target.value}))} placeholder="Lahore" style={{marginTop:10,marginBottom:0}}/>
+          <label style={{display:"flex",gap:8,alignItems:"center",marginTop:12,fontSize:12.5,color:T.muted,cursor:"pointer"}}>
+            <input type="checkbox" checked={!!form.isMain} onChange={e=>setForm(f=>({...f,isMain:e.target.checked}))}/>
+            Main campus — where a student lands when nobody says which
+          </label>
+          <div style={{display:"flex",gap:8,marginTop:14}}>
+            <Btn onClick={save} disabled={busy==="save"}>{busy==="save"?"Saving…":(form.id?"Save":"Add campus")}</Btn>
+            <Btn out color={T.muted} onClick={()=>{setForm(null);setErr("");}}>Cancel</Btn>
+          </div>
+        </div>
+      )}
+
+      {rows===null&&<div style={{fontSize:12.5,color:T.muted,padding:"10px 0"}}>Loading…</div>}
+      {rows!==null&&rows.length===0&&!form&&(
+        <div style={{fontSize:12.5,color:T.muted,padding:"14px 0",lineHeight:1.7}}>
+          No campuses yet. This school is treated as a single site.
+        </div>
+      )}
+
+      {(rows??[]).map(b=>(
+        <div key={b.id} style={{display:"flex",gap:10,alignItems:"center",padding:"11px 0",borderTop:`1px solid ${T.border}`}}>
+          <div style={{flex:1,minWidth:0}}>
+            <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
+              <span style={{fontSize:13,fontWeight:700,color:T.ink}}>{b.name}</span>
+              <Bdg label={b.code} color={T.blue} bg={`${T.blue}12`}/>
+              {b.isMain&&<Bdg label="Main" color={T.forest} bg={`${T.forest}12`}/>}
+            </div>
+            <div style={{fontSize:11.5,color:T.muted,marginTop:3}}>
+              {b.city?`${b.city} · `:""}{count(b.studentCount,"student")} · {count(b.teacherCount,"teacher")}
+            </div>
+          </div>
+          {confirming===b.id?(
+            <div style={{display:"flex",gap:6,alignItems:"center",flexShrink:0}}>
+              <span style={{fontSize:11,color:T.danger,fontWeight:700}}>Close it?</span>
+              <span {...pressable(()=>close(b),`Confirm closing ${b.name}`,{disabled:busy===b.id})} style={{cursor:"pointer"}}>
+                <Bdg label={busy===b.id?"Closing…":"Yes"} color={T.danger} bg={`${T.danger}15`}/>
+              </span>
+              <span {...pressable(()=>setConfirming(""),"Keep it")} style={{cursor:"pointer"}}>
+                <Bdg label="Keep" color={T.muted} bg={T.paper}/>
+              </span>
+            </div>
+          ):(
+            <div style={{display:"flex",gap:6,flexShrink:0}}>
+              <span {...pressable(()=>{setForm(b);setErr("");},`Edit ${b.name}`)} style={{cursor:"pointer"}}>
+                <Bdg label="Edit" color={T.forest} bg={`${T.forest}15`}/>
+              </span>
+              <span {...pressable(()=>setConfirming(b.id),`Close ${b.name}`)} style={{cursor:"pointer"}}>
+                <Bdg label="Close" color={T.danger} bg={`${T.danger}15`}/>
+              </span>
+            </div>
+          )}
+        </div>
+      ))}
+    </Crd>
+  );
+};
+
 const AdminPortal=({user,db,setDb,onLogout,onReload})=>{
   const[tab,setTab]=useHashTab("dashboard",ADMIN_TABS);
   const[col,setCol]=useState(false);
@@ -4875,6 +5015,7 @@ const AdminPortal=({user,db,setDb,onLogout,onReload})=>{
   const[stuQ,setStuQ]=useState("");
   const[stuGrade,setStuGrade]=useState("");
   const[stuStatus,setStuStatus]=useState("");
+  const[stuBranch,setStuBranch]=useState("");
   const[parQ,setParQ]=useState("");
 
   const gradeOptions=useMemo(()=>{
@@ -4883,6 +5024,16 @@ const AdminPortal=({user,db,setDb,onLogout,onReload})=>{
     seen.sort((a,b)=>a.localeCompare(b,undefined,{numeric:true}));
     return[{v:"",l:"All grades"},...seen.map(g=>({v:g,l:g}))];
   },[students]);
+
+  /**
+   * Campuses, or nothing at all.
+   *
+   * A school with one building has no branches, so this list is empty and the
+   * filter that reads it never renders. Nobody is asked to choose between one
+   * option and itself.
+   */
+  const branches=db.branches??[];
+  const branchOptions=[{v:"",l:"All campuses"},...branches.map(b=>({v:b.id,l:b.name}))];
 
   const statusOptions=[
     {v:"",l:"All statuses"},{v:"active",l:"Active"},{v:"inactive",l:"Inactive"},
@@ -4895,10 +5046,11 @@ const AdminPortal=({user,db,setDb,onLogout,onReload})=>{
     return students.filter(s=>
       (!stuGrade||s.grade===stuGrade)&&
       (!stuStatus||s.status===stuStatus)&&
+      (!stuBranch||s.branch?.id===stuBranch)&&
       // Name, roll and code: the three things a parent or a file actually quotes.
       (!q||has(s.name)||has(s.roll)||has(s.code))
     );
-  },[students,stuQ,stuGrade,stuStatus]);
+  },[students,stuQ,stuGrade,stuStatus,stuBranch]);
 
   const shownParents=useMemo(()=>{
     const q=parQ.trim().toLowerCase();
@@ -6654,8 +6806,11 @@ const AdminPortal=({user,db,setDb,onLogout,onReload})=>{
             <Inp label="Search" value={stuQ} onChange={e=>setStuQ(e.target.value)} placeholder="Name, roll no or code" style={{marginBottom:0,flex:"1 1 240px"}}/>
             <Sel label="Grade" options={gradeOptions} value={stuGrade} onChange={e=>setStuGrade(e.target.value)} style={{marginBottom:0,width:160}}/>
             <Sel label="Status" options={statusOptions} value={stuStatus} onChange={e=>setStuStatus(e.target.value)} style={{marginBottom:0,width:160}}/>
-            {(stuQ||stuGrade||stuStatus)&&(
-              <Btn out color={T.muted} onClick={()=>{setStuQ("");setStuGrade("");setStuStatus("");}} style={{marginBottom:2}}>Clear</Btn>
+            {branches.length>0&&(
+              <Sel label="Campus" options={branchOptions} value={stuBranch} onChange={e=>setStuBranch(e.target.value)} style={{marginBottom:0,width:170}}/>
+            )}
+            {(stuQ||stuGrade||stuStatus||stuBranch)&&(
+              <Btn out color={T.muted} onClick={()=>{setStuQ("");setStuGrade("");setStuStatus("");setStuBranch("");}} style={{marginBottom:2}}>Clear</Btn>
             )}
             <div style={{fontSize:12,color:T.muted,paddingBottom:12,marginLeft:"auto"}}>
               {count(shownStudents.length,"student")}{shownStudents.length!==students.length&&` of ${students.length}`}
@@ -6989,6 +7144,7 @@ const AdminPortal=({user,db,setDb,onLogout,onReload})=>{
               <SessionRolloverCard/>
               <ExamTermsCard onSaved={()=>onReload?.()}/>
               <GradingPolicyCard onSaved={m=>{setPErr("");setPNote(m??"Grading policy saved.");}}/>
+              <CampusesCard onChanged={()=>onReload?.()}/>
               <SubscriptionCard/>
               <NotificationSettingsCard/>
             </div>

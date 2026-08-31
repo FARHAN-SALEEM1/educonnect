@@ -303,6 +303,15 @@ export const dashboard = {
   parent: () => http.get("/dashboard/parent"),
 };
 
+/** Campuses of one school. Empty for the schools that only have one. */
+export const branches = {
+  list: () => http.get("/branches"),
+  create: (payload) => http.post("/branches", payload),
+  update: (id, payload) => http.patch(`/branches/${id}`, payload),
+  remove: (id) => http.delete(`/branches/${id}`),
+  reassign: (id, payload) => http.post(`/branches/${id}/reassign`, payload),
+};
+
 export const reports = {
   institute: (params) => http.get("/reports/institute", params),
   auditLogs: (params) => http.get("/audit-logs", params),
@@ -311,5 +320,5 @@ export const reports = {
 export default {
   auth, plans, platform, subscriptions, billing, institutes, users, students,
   teachers, parents, subjects, assessments, attendance, fees, timetable, classes,
-  messages, notices, dashboard, reports,
+  messages, notices, dashboard, reports, branches,
 };

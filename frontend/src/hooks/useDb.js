@@ -14,6 +14,7 @@ import {
 const EMPTY = {
   institutes: [],
   users: [],
+  branches: [],
   students: [],
   teachers: [],
   parents: [],
@@ -106,7 +107,9 @@ async function loadForRole(user) {
     }
 
     case "admin": {
-      const [institute, students, teachers, parents, notices, messages, dash, subscription] =
+      // `branches` comes back empty for the schools that only have one campus,
+      // and every campus control in the portal hides itself when it is.
+      const [institute, students, teachers, parents, notices, messages, dash, subscription, branches] =
         await Promise.all([
           api.institutes.get(user.inst),
           fetchAll(api.students.list),
@@ -118,6 +121,7 @@ async function loadForRole(user) {
           // hardcoded because this was never fetched.
           api.dashboard.admin(),
           api.institutes.mySubscription(),
+          api.branches.list().catch(() => []),
         ]);
 
       return {
@@ -130,6 +134,7 @@ async function loadForRole(user) {
         messages: messages.map((m) => toLegacyMessage(m, user.id)),
         adminDashboard: dash,
         subscription,
+        branches,
         truncated: students.truncated,
         studentTotal: students.total,
       };

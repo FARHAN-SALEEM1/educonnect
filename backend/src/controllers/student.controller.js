@@ -78,7 +78,8 @@ const emailProblem = (value, label) => {
 /** GET /api/students */
 export const listStudents = asyncHandler(async (req, res) => {
   const { page, limit, skip } = paginate(req.query);
-  const { search, grade, section, status, parentId, sortBy = "name", order = "asc" } = req.query;
+  const { search, grade, section, status, parentId, branchId, sortBy = "name", order = "asc" } =
+    req.query;
 
   const scope = await studentScopeWhere(req);
   /**
@@ -103,6 +104,8 @@ export const listStudents = asyncHandler(async (req, res) => {
     ...(section && { section }),
     ...(status && { status }),
     ...(parentId && { parentId }),
+    // A campus filter, when the school has campuses at all.
+    ...(branchId && { branchId }),
     ...(search && {
       OR: [
         { name: { contains: search, mode: "insensitive" } },
@@ -141,6 +144,7 @@ export const listStudents = asyncHandler(async (req, res) => {
           },
         },
         institute: { select: { id: true, name: true, code: true } },
+        branch: { select: { id: true, name: true, code: true } },
       },
     }),
   ]);
@@ -256,6 +260,7 @@ export const listStudents = asyncHandler(async (req, res) => {
       photoUrl: s.photoUrl,
       parent: s.parent,
       institute: s.institute,
+      branch: s.branch,
 
       average: averageScore(s.enrollments),
       rank: rankByStudent.get(s.id) ?? null,

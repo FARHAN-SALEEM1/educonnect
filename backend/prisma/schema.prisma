@@ -20,16 +20,16 @@ datasource db {
 
 enum Role {
   SUPERADMIN // platform owner — sees every institute
-  ADMIN      // institute administrator
+  ADMIN // institute administrator
   TEACHER
   PARENT
 }
 
 enum InstituteStatus {
-  PENDING   // signed up, awaiting approval
+  PENDING // signed up, awaiting approval
   ACTIVE
   SUSPENDED // suspended by the platform, e.g. non-payment
-  EXPIRED   // a cancelled subscription that has passed subscriptionEndsAt
+  EXPIRED // a cancelled subscription that has passed subscriptionEndsAt
   CANCELLED // closed for good
 }
 
@@ -137,8 +137,8 @@ model Plan {
   /// data change, not another migration.
   providerPriceIds Json?
 
-  institutes            Institute[]
-  subscriptionInvoices  SubscriptionInvoice[]
+  institutes           Institute[]
+  subscriptionInvoices SubscriptionInvoice[]
 
   @@map("plans")
 }
@@ -178,13 +178,13 @@ model Institute {
   status            InstituteStatus @default(PENDING)
   planId            String
   defaultMonthlyFee Int             @default(0) // PKR, used when generating student invoices
-  approxStudents    Int?            // self-reported at signup, informational only
+  approxStudents    Int? // self-reported at signup, informational only
 
   /// The seat cap this institute actually operates under.
   /// null = inherit the plan's maxStudents. Set when a school asks for a
   /// smaller cap than its plan allows; can never exceed the plan's limit.
   /// Always read through effectiveStudentLimit() — never plan.maxStudents.
-  studentLimit      Int?
+  studentLimit Int?
 
   // ── Billing ────────────────────────────────────────────────────────
   /// Which gateway collects money for this institute, if any.
@@ -206,7 +206,7 @@ model Institute {
   /// Subscription lifecycle. Cancelling is end-of-period, not immediate:
   /// the school keeps working until subscriptionEndsAt, and no data is
   /// removed. Clearing both fields resumes the subscription.
-  cancelAtPeriodEnd Boolean         @default(false)
+  cancelAtPeriodEnd  Boolean   @default(false)
   subscriptionEndsAt DateTime?
 
   /// Per-institute notification preferences. JSON so a new toggle doesn't
@@ -217,13 +217,13 @@ model Institute {
   /// school that never touches it gets the platform defaults, and adding a band
   /// needs no migration. Read through gradingPolicy() in utils/grading.js.
   gradingSettings      Json?
-  joinedAt          DateTime        @default(now())
-  trialEndsAt       DateTime?
+  joinedAt             DateTime  @default(now())
+  trialEndsAt          DateTime?
   /// Soft delete. Set instead of removing the row, so a mistaken deletion is
   /// recoverable; a super admin can purge for good.
-  deletedAt         DateTime?
-  createdAt         DateTime        @default(now())
-  updatedAt         DateTime        @updatedAt
+  deletedAt            DateTime?
+  createdAt            DateTime  @default(now())
+  updatedAt            DateTime  @updatedAt
 
   plan                 Plan                  @relation(fields: [planId], references: [id])
   users                User[]
@@ -241,14 +241,15 @@ model Institute {
   notices              Notice[]
   subscriptionInvoices SubscriptionInvoice[]
   auditLogs            AuditLog[]
+  branches             Branch[]
 
-  @@index([status])
-  @@index([planId])
   /// Composite so the same identifier from two different gateways can't
   /// collide. Postgres treats NULLs as distinct, so every institute that has
   /// no provider yet coexists happily.
   @@unique([paymentProvider, providerCustomerId])
   @@unique([paymentProvider, providerSubscriptionId])
+  @@index([status])
+  @@index([planId])
   @@map("institutes")
 }
 
@@ -326,15 +327,15 @@ model User {
   createdAt    DateTime  @default(now())
   updatedAt    DateTime  @updatedAt
 
-  institute        Institute?     @relation(fields: [instituteId], references: [id], onDelete: Cascade)
+  institute        Institute?           @relation(fields: [instituteId], references: [id], onDelete: Cascade)
   teacher          Teacher?
   parent           Parent?
   refreshTokens    RefreshToken[]
   resetTokens      PasswordResetToken[]
-  sentMessages     Message[]      @relation("MessageSender")
-  receivedMessages Message[]      @relation("MessageRecipient")
-  createdNotices   Notice[]       @relation("NoticeAuthor")
-  markedAttendance Attendance[]   @relation("AttendanceMarker")
+  sentMessages     Message[]            @relation("MessageSender")
+  receivedMessages Message[]            @relation("MessageRecipient")
+  createdNotices   Notice[]             @relation("NoticeAuthor")
+  markedAttendance Attendance[]         @relation("AttendanceMarker")
   auditLogs        AuditLog[]
   promotionsMade   StudentPromotion[]
 
@@ -378,21 +379,24 @@ model RefreshToken {
 // ──────────────────────────── PEOPLE ────────────────────────────
 
 model Teacher {
-  id          String   @id @default(cuid())
-  code        String // TCH001
-  name        String
-  email       String
-  phone       String?
-  designation String?
+  id            String    @id @default(cuid())
+  code          String // TCH001
+  name          String
+  email         String
+  phone         String?
+  designation   String?
   qualification String?
-  joinedAt    DateTime @default(now())
-  isActive    Boolean  @default(true)
-  instituteId String
-  userId      String?  @unique
-  deletedAt   DateTime?
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  joinedAt      DateTime  @default(now())
+  isActive      Boolean   @default(true)
+  // Optional: a school with one campus never sets it.
+  branchId      String?
+  instituteId   String
+  userId        String?   @unique
+  deletedAt     DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
 
+  branch         Branch?         @relation(fields: [branchId], references: [id], onDelete: SetNull)
   institute      Institute       @relation(fields: [instituteId], references: [id], onDelete: Cascade)
   user           User?           @relation(fields: [userId], references: [id], onDelete: SetNull)
   subjects       Subject[]
@@ -405,20 +409,20 @@ model Teacher {
 }
 
 model Parent {
-  id           String   @id @default(cuid())
-  code         String // PAR001
-  name         String
-  email        String
-  phone        String?
-  relation     String? // Mother / Father / Guardian
-  occupation   String?
-  cnic         String?
-  address      String?
-  instituteId  String
-  userId       String?  @unique
-  deletedAt    DateTime?
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  id          String    @id @default(cuid())
+  code        String // PAR001
+  name        String
+  email       String
+  phone       String?
+  relation    String? // Mother / Father / Guardian
+  occupation  String?
+  cnic        String?
+  address     String?
+  instituteId String
+  userId      String?   @unique
+  deletedAt   DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
 
   institute Institute @relation(fields: [instituteId], references: [id], onDelete: Cascade)
   user      User?     @relation(fields: [userId], references: [id], onDelete: SetNull)
@@ -444,14 +448,17 @@ model Student {
   photoUrl    String?
   status      StudentStatus @default(ACTIVE)
   admittedAt  DateTime      @default(now())
+  // Optional: a school with one campus never sets it.
+  branchId    String?
   instituteId String
   parentId    String?
   deletedAt   DateTime?
   createdAt   DateTime      @default(now())
   updatedAt   DateTime      @updatedAt
 
-  institute   Institute    @relation(fields: [instituteId], references: [id], onDelete: Cascade)
-  parent      Parent?      @relation(fields: [parentId], references: [id], onDelete: SetNull)
+  branch      Branch?            @relation(fields: [branchId], references: [id], onDelete: SetNull)
+  institute   Institute          @relation(fields: [instituteId], references: [id], onDelete: Cascade)
+  parent      Parent?            @relation(fields: [parentId], references: [id], onDelete: SetNull)
   enrollments Enrollment[]
   promotions  StudentPromotion[]
   attendance  Attendance[]
@@ -600,9 +607,9 @@ model StudentPromotion {
 }
 
 model Enrollment {
-  id             String   @id @default(cuid())
-  studentId      String
-  subjectId      String
+  id                String   @id @default(cuid())
+  studentId         String
+  subjectId         String
   /// The academic year this enrolment belongs to.
   ///
   /// Required. It was nullable while existing rows were reconciled from evidence
@@ -612,18 +619,18 @@ model Enrollment {
   /// lets a repeating student take the same subject again without overwriting
   /// the year they are repeating.
   academicSessionId String
-  currentScore   Float? // 0-100
-  previousScore  Float?
-  predictedScore Float?
-  letterGrade    String? // A+, A, A−, B+ ...
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
+  currentScore      Float? // 0-100
+  previousScore     Float?
+  predictedScore    Float?
+  letterGrade       String? // A+, A, A−, B+ ...
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
 
-  student         Student          @relation(fields: [studentId], references: [id], onDelete: Cascade)
-  subject         Subject          @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+  student         Student         @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  subject         Subject         @relation(fields: [subjectId], references: [id], onDelete: Cascade)
   /// Restrict, not Cascade: a year holding results must not be deletable out
   /// from under them, and a year cannot be quietly detached from its enrolments.
-  academicSession AcademicSession  @relation(fields: [academicSessionId], references: [id], onDelete: Restrict)
+  academicSession AcademicSession @relation(fields: [academicSessionId], references: [id], onDelete: Restrict)
   assessments     Assessment[]
 
   @@unique([studentId, subjectId, academicSessionId])
@@ -722,17 +729,17 @@ model AcademicClass {
 }
 
 model TimetableSlot {
-  id          String   @id @default(cuid())
-  instituteId String
-  grade       String
-  section     String
-  dayOfWeek   Int // 1 = Monday … 7 = Sunday
-  period      Int // 1-based period number
-  subjectId   String
-  teacherId   String?
-  startTime   String? // "08:00"
-  endTime     String? // "08:45"
-  room        String?
+  id           String   @id @default(cuid())
+  instituteId  String
+  grade        String
+  section      String
+  dayOfWeek    Int // 1 = Monday … 7 = Sunday
+  period       Int // 1-based period number
+  subjectId    String
+  teacherId    String?
+  startTime    String? // "08:00"
+  endTime      String? // "08:45"
+  room         String?
   /// Nullable so the 60 rows that predate AcademicClass stay valid. New slots
   /// created through the admin screen always carry one.
   classId      String?
@@ -742,8 +749,8 @@ model TimetableSlot {
   /// Free text the timetable shows alongside the subject — "double period",
   /// "bring lab coats".
   notes        String?
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
 
   institute     Institute      @relation(fields: [instituteId], references: [id], onDelete: Cascade)
   subject       Subject        @relation(fields: [subjectId], references: [id], onDelete: Cascade)
@@ -899,3 +906,35 @@ model AuditLog {
   @@map("audit_logs")
 }
 
+/// A campus of one school.
+///
+/// Deliberately **not** a second tenant. A school running three campuses signs one
+/// contract, pays one subscription and expects its head office to see all three at
+/// once — so the institute stays the boundary every query is scoped to, and a branch
+/// is a filter inside it. Making each campus its own institute would have handed them
+/// three logins, three bills and no combined roll.
+///
+/// branchId is optional everywhere: a school with a single campus never creates one
+/// and nothing about their screens changes.
+model Branch {
+  id          String    @id @default(cuid())
+  instituteId String
+  name        String
+  code        String
+  city        String?
+  address     String?
+  phone       String?
+  /// The campus a student lands in when nobody says which.
+  isMain      Boolean   @default(false)
+  deletedAt   DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  institute Institute @relation(fields: [instituteId], references: [id], onDelete: Cascade)
+  students  Student[]
+  teachers  Teacher[]
+
+  @@unique([instituteId, code])
+  @@index([instituteId])
+  @@map("branches")
+}

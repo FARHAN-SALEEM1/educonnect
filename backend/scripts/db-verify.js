@@ -26,7 +26,7 @@ import { prismaRaw } from "../src/config/prisma.js";
  * written down elsewhere will not match, and should not be expected to.
  */
 const MODELS = [
-  "institute", "user", "student", "teacher", "parent",
+  "institute", "branch", "user", "student", "teacher", "parent",
   "subject", "enrollment", "assessment", "attendance",
   "academicClass", "timetableSlot", "studentPromotion", "academicSession", "examTerm",
   "feeInvoice", "feeItem", "subscriptionInvoice", "notice", "message",
