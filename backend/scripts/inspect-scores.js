@@ -11,18 +11,17 @@
  *   node scripts/inspect-scores.js --institute <id>
  *
  * For every enrolment it reports the recorded score, the marks underneath, and
- * the grade; for every student it reports the GPA, class average and class rank
- * as they stand now and as they would stand if the unsupported scores were
- * cleared. Both `calculateGpa` and `averageScore` *exclude* a null rather than
- * counting it as zero, so clearing a low score can raise a student and clearing
- * a high one can lower them — which is exactly why this needs eyes on it.
+ * the grade; for every student it reports the class average and class rank as
+ * they stand now and as they would stand if the unsupported scores were
+ * cleared. `averageScore` *excludes* a null rather than counting it as zero, so
+ * clearing a low score can raise a student and clearing a high one can lower
+ * them — which is exactly why this needs eyes on it.
  */
 
 import { PrismaClient } from "@prisma/client";
 import {
   assessmentAverage,
   averageScore,
-  calculateGpa,
   classRank,
   letterGrade,
 } from "../src/utils/academics.js";
@@ -167,20 +166,17 @@ async function main() {
       console.log(`  ${grade} ${section}`);
       console.log(
         `  ${pad("STUDENT", 16)}${pad("SUBJECTS", 11)}${pad("AVG NOW", 10)}${pad("AVG AFTER", 11)}` +
-          `${pad("GPA NOW", 10)}${pad("GPA AFTER", 11)}${pad("RANK NOW", 10)}RANK AFTER`
+          `${pad("RANK NOW", 10)}RANK AFTER`
       );
       for (const s of cohort) {
         const kept = s.enrollments.filter((en) => !clearedIds.has(en.id));
         const lost = s.enrollments.length - kept.length;
         const rankNow = classRank(before, s.id);
         const rankAfter = classRank(after, s.id);
-        const gpaNow = calculateGpa(s.enrollments);
-        const gpaAfter = calculateGpa(kept);
         const mark = lost ? ` (−${lost})` : "";
         console.log(
           `  ${pad(s.name, 16)}${pad(`${s.enrollments.length}${mark}`, 11)}` +
             `${pad(averageScore(s.enrollments), 10)}${pad(averageScore(kept), 11)}` +
-            `${pad(gpaNow, 10)}${pad(gpaAfter, 11)}` +
             `${pad(`${rankNow.rank}/${rankNow.classSize}`, 10)}${rankAfter.rank}/${rankAfter.classSize}`
         );
       }

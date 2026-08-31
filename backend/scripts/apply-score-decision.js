@@ -175,7 +175,7 @@ async function main() {
   if (clearing.length) {
     console.log(`  ${clearing.length} of these would be CLEARED — no marks stand behind them.`);
     console.log("  Those subjects will show no score on the result card, and will drop");
-    console.log("  out of the GPA and the class average rather than counting as zero.\n");
+    console.log("  out of the class average rather than counting as zero.\n");
   }
 
   if (!APPLY) {
