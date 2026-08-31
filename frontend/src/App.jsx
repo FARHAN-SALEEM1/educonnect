@@ -116,6 +116,17 @@ const css=`
     .ec-kpi{padding:14px 12px!important;}
     .ec-kpi-v{font-size:21px!important;}
     .ec-kpi-i{display:none!important;}
+
+    /* main had no padding of its own until this rule gave it some, while the
+       page div kept its desktop 34px — so a phone was paying 48px a side for
+       margin. One of them holds the padding now, and it leaves room at the
+       foot for the bottom bar to sit over nothing. */
+    main{padding:0!important;}
+    .ec-page{padding:16px 14px 86px!important;}
+
+    /* The sheet lays its own items out; the blanket rule above would stack
+       five of them into a column tall enough to need scrolling. */
+    .ec-more{grid-template-columns:repeat(3,minmax(0,1fr))!important;}
     /* Fixed-height panes (message inbox) would trap content on mobile. */
     [style*="height:520px"],[style*="height: 520px"]{height:auto!important;}
     main{padding:18px 14px!important;}
@@ -1114,16 +1125,92 @@ const useHashTab=(fallback,valid)=>{
   return[tab,setTab];
 };
 
+/**
+ * The phone's navigation.
+ *
+ * A parent reads this on a phone between school runs, and a 64px rail down
+ * the left spends a fifth of a 375px screen saying what a bottom bar says for
+ * nothing — at the end of the screen a thumb actually reaches. Four screens
+ * sit in the bar; the rest, and the way out, live behind More, because a bar
+ * with nine targets in it is a bar nobody can hit.
+ */
+const BottomNav=({nav,tab,setTab,user,inst,onLogout})=>{
+  const[more,setMore]=useState(false);
+  const primary=nav.slice(0,4);
+  const rest=nav.slice(4);
+  const restHoldsTab=rest.some(n=>n.id===tab);
+
+  const Item=({n,active,onPick})=>(
+    <div {...pressable(onPick,n.label)}
+      style={{flex:1,minWidth:0,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",
+        gap:3,padding:"7px 2px 6px",cursor:"pointer",color:active?T.forest:T.muted,position:"relative"}}>
+      <span style={{fontSize:17,lineHeight:1}}>{n.icon}</span>
+      <span style={{fontSize:9.5,fontWeight:active?700:500,maxWidth:"100%",whiteSpace:"nowrap",
+        overflow:"hidden",textOverflow:"ellipsis"}}>{n.label}</span>
+      {n.badge>0&&(
+        <span style={{position:"absolute",top:3,left:"calc(50% + 6px)",background:T.clay,color:"#fff",
+          borderRadius:99,fontSize:9,fontWeight:700,padding:"0 5px",lineHeight:"14px"}}>{n.badge}</span>
+      )}
+    </div>
+  );
+
+  return(
+    <>
+      {more&&<div {...pressable(()=>setMore(false),"Close the menu")}
+        style={{position:"fixed",inset:0,background:"rgba(15,23,42,.45)",zIndex:899}}/>}
+
+      {more&&(
+        <div style={{position:"fixed",left:0,right:0,bottom:58,zIndex:901,background:T.card,
+          borderRadius:"20px 20px 0 0",padding:"16px 14px 20px",maxHeight:"62vh",overflowY:"auto",
+          boxShadow:"0 -10px 30px rgba(15,23,42,.18)"}}>
+          <div style={{fontSize:11,fontWeight:700,color:T.muted,textTransform:"uppercase",
+            letterSpacing:"1px",marginBottom:12,padding:"0 4px"}}>{inst?.name||"EduConnect"}</div>
+          <div className="ec-more" style={{display:"grid",gridTemplateColumns:"repeat(3,minmax(0,1fr))",gap:6}}>
+            {rest.map(n=>(
+              <Item key={n.id} n={n} active={tab===n.id} onPick={()=>{setMore(false);setTab(n.id);}}/>
+            ))}
+          </div>
+          <div {...pressable(()=>{setMore(false);onLogout?.();},"Log out")}
+            style={{marginTop:14,padding:"12px",borderRadius:12,border:`1px solid ${T.border}`,
+              textAlign:"center",fontSize:13,fontWeight:600,color:T.danger,cursor:"pointer"}}>
+            Log out
+          </div>
+        </div>
+      )}
+
+      <nav style={{position:"fixed",left:0,right:0,bottom:0,zIndex:900,background:T.card,
+        borderTop:`1px solid ${T.border}`,display:"flex",alignItems:"stretch",
+        boxShadow:"0 -2px 14px rgba(15,23,42,.06)"}}>
+        {primary.map(n=>(
+          <Item key={n.id} n={n} active={tab===n.id&&!more} onPick={()=>{setMore(false);setTab(n.id);}}/>
+        ))}
+        {rest.length>0&&(
+          <Item n={{id:"__more",label:"More",icon:"⋯"}} active={more||(restHoldsTab&&!more)}
+            onPick={()=>setMore(m=>!m)}/>
+        )}
+      </nav>
+    </>
+  );
+};
+
 const Shell=({nav,tab,setTab,user,inst,collapsed,setCollapsed,onLogout,children})=>{
   const narrow=useMediaQuery("(max-width: 900px)");
   // Below 900px the sidebar is always icons-only, so content keeps its room.
   const isCollapsed=collapsed||narrow;
+  /**
+   * On a phone it steps aside entirely for a bottom bar. Even collapsed the
+   * rail is 64px of a 375px screen, and it puts navigation at the top-left —
+   * the far corner from the thumb holding the phone.
+   */
+  const phone=useMediaQuery("(max-width: 640px)");
 
   return(
     <div style={{display:"flex",minHeight:"100vh",background:T.bg,maxWidth:"100vw",overflowX:"hidden"}}>
       <style>{css}</style>
-      <Sidebar nav={nav} tab={tab} setTab={setTab} user={user} inst={inst}
-        collapsed={isCollapsed} setCollapsed={narrow?()=>{}:setCollapsed} onLogout={onLogout} lockCollapsed={narrow}/>
+      {!phone&&(
+        <Sidebar nav={nav} tab={tab} setTab={setTab} user={user} inst={inst}
+          collapsed={isCollapsed} setCollapsed={narrow?()=>{}:setCollapsed} onLogout={onLogout} lockCollapsed={narrow}/>
+      )}
       <main style={{flex:1,overflowY:"auto",minWidth:0,maxWidth:"100%",animation:"fadeUp .38s ease"}}>
         {/* On a demo deployment every session is a demo session, so this says so
             once, quietly, everywhere. Someone clicking through four portals
@@ -1136,8 +1223,11 @@ const Shell=({nav,tab,setTab,user,inst,collapsed,setCollapsed,onLogout,children}
             <span style={{color:T.muted}}>Sample data, shared with everyone trying EduConnect. Nothing here belongs to a real school.</span>
           </div>
         )}
-        <div style={{padding:"28px 34px"}}>{children}</div>
+        <div className="ec-page" style={{padding:"28px 34px"}}>{children}</div>
       </main>
+      {phone&&(
+        <BottomNav nav={nav} tab={tab} setTab={setTab} user={user} inst={inst} onLogout={onLogout}/>
+      )}
     </div>
   );
 };
