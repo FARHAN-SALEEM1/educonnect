@@ -1316,6 +1316,9 @@ const BottomNav=({nav,tab,setTab,user,inst,onLogout,moreLabel="More",logoutLabel
 };
 
 const Shell=({nav,tab,setTab,user,inst,collapsed,setCollapsed,onLogout,children,moreLabel,logoutLabel})=>{
+  // Same for a tab: a long roster leaves you 2,000px down, and the next
+  // screen opened at that offset with its own heading out of sight.
+  useEffect(()=>{window.scrollTo(0,0);},[tab]);
   const narrow=useMediaQuery("(max-width: 900px)");
   // Below 900px the sidebar is always icons-only, so content keeps its room.
   const isCollapsed=collapsed||narrow;
@@ -9389,6 +9392,19 @@ export default function App() {
   // The access token is memory-only, so every load starts signed out until the
   // httpOnly refresh cookie is exchanged for a new one.
   const[restoring,setRestoring]=useState(true);
+
+  /**
+   * A new screen starts at the top of itself.
+   *
+   * Swapping the view does not move the scroll, and the landing page is
+   * 3,900px tall while the registration wizard is 900. Someone who read down
+   * to the pricing and pressed "Get Started — Free Trial" got the form — with
+   * the browser clamping their old offset to the new page, so the logo, the
+   * words "Institute Registration" and the 1-2-3-4 step dots were all above
+   * the fold. Nothing on screen said the click had done anything, which is
+   * exactly how it was reported: the button does not work.
+   */
+  useEffect(()=>{window.scrollTo(0,0);},[screen]);
 
   const{db,loading,error,reload}=useDb(user);
 

@@ -184,6 +184,27 @@ ok(
   /const count = \(n, singular, plural = `\$\{singular\}s`\) =>/.test(src)
 );
 
+console.log("\n=== a new screen starts at the top of itself ===");
+
+/**
+ * Swapping the view does not move the scroll. The landing page is 3,900px on
+ * a desktop and 4,900 on a phone; the registration wizard is 900. Someone who
+ * read down to the pricing and pressed "Get Started — Free Trial" got the
+ * form with their old offset clamped onto it, so the logo, the words
+ * "Institute Registration" and the 1-2-3-4 step dots were all above the fold.
+ * Nothing said the click had done anything — which is how it was reported:
+ * the button does not work.
+ */
+ok(
+  "changing screen scrolls to the top",
+  src.includes("useEffect(()=>{window.scrollTo(0,0);},[screen]);"),
+  "the signup wizard opens at whatever offset the landing page was left at"
+);
+ok(
+  "and so does changing tab inside a portal",
+  src.includes("useEffect(()=>{window.scrollTo(0,0);},[tab]);")
+);
+
 console.log("\n=== a date is the day it says ===");
 
 /**
